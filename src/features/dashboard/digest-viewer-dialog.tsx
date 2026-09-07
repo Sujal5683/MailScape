@@ -34,7 +34,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import { ScrollArea } from '@/components/ui/scroll-area'
+import { PaneScroll } from '@/components/ui/pane-scroll'
 
 import { colorClass } from '@/lib/category-meta'
 import { formatDate, formatRelative, daysUntil } from '@/lib/format'
@@ -309,7 +309,7 @@ export function DigestViewerDialog({
         </DialogHeader>
 
         {digest ? (
-          <ScrollArea className="flex-1">
+          <PaneScroll>
             <div className="space-y-6 px-6 py-5">
               {/* Week summary narrative */}
               <section className="space-y-2">
@@ -361,7 +361,7 @@ export function DigestViewerDialog({
                 </span>
               </div>
             </div>
-          </ScrollArea>
+          </PaneScroll>
         ) : (
           <div className="flex flex-1 items-center justify-center p-10 text-sm text-muted-foreground">
             No digest available.

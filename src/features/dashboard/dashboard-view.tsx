@@ -205,6 +205,15 @@ export function DashboardView() {
   const navigate = useUIStore((s) => s.navigate)
   const variants = useStaggerVariants()
 
+  // Category name → color map, passed to the WeeklyDigestCard so its deadline
+  // swatches match the rest of the dashboard. Derived from the dashboard's
+  // categoryCounts (already fetched) so no extra query is needed.
+  const categoryColors = useMemo<Record<string, string>>(() => {
+    const m: Record<string, string> = {}
+    for (const c of data?.categoryCounts ?? []) m[c.name] = c.color
+    return m
+  }, [data])
+
   // ── No-accounts landing state ──────────────────────────────────────────────
   // When a user first logs in they have zero Google accounts connected.
   // Show a welcoming hero instead of empty/broken charts.
@@ -254,15 +263,6 @@ export function DashboardView() {
       </div>
     )
   }
-
-  // Category name → color map, passed to the WeeklyDigestCard so its deadline
-  // swatches match the rest of the dashboard. Derived from the dashboard's
-  // categoryCounts (already fetched) so no extra query is needed.
-  const categoryColors = useMemo<Record<string, string>>(() => {
-    const m: Record<string, string> = {}
-    for (const c of data?.categoryCounts ?? []) m[c.name] = c.color
-    return m
-  }, [data])
 
   if (isError) {
     return (

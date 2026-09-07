@@ -9,7 +9,7 @@ import type { CategorySummary } from '@/lib/types'
 import { useDeleteCategory } from '@/hooks/use-queries'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { ScrollArea } from '@/components/ui/scroll-area'
+import { PaneScroll } from '@/components/ui/pane-scroll'
 import { Separator } from '@/components/ui/separator'
 import {
   AlertDialog,
@@ -111,7 +111,7 @@ export function CategoryDetail({
           masterMaxWidth={500}
           storageKey="organized-detail-layout"
           master={
-            <ScrollArea className="min-h-0 flex-1">
+            <PaneScroll>
               <div className="p-2">
                 <EmailList
                   selectedId={selectedEmailId}
@@ -119,7 +119,7 @@ export function CategoryDetail({
                   filter={{ categoryId: category.id }}
                 />
               </div>
-            </ScrollArea>
+            </PaneScroll>
           }
           detail={<EmailDetail emailId={selectedEmailId} onBack={() => setSelectedEmailId(null)} />}
         />

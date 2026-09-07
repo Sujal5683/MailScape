@@ -253,7 +253,7 @@ function EmailRow({
         <div className="flex items-baseline gap-2">
           <p
             className={cn(
-              'min-w-0 truncate text-sm',
+              'min-w-0 break-words text-sm',
               email.flags.isRead ? 'font-medium' : 'font-semibold',
             )}
           >
@@ -265,7 +265,7 @@ function EmailRow({
         </div>
         <p
           className={cn(
-            'min-w-0 truncate text-sm',
+            'min-w-0 break-words text-sm',
             email.flags.isRead ? 'text-muted-foreground' : 'text-foreground font-medium',
           )}
         >

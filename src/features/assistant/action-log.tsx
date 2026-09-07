@@ -26,7 +26,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { ScrollArea } from '@/components/ui/scroll-area'
+import { PaneScroll } from '@/components/ui/pane-scroll'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useConversationActions, useRevertAction } from '@/hooks/use-queries'
 import { formatRelative, formatDateTime } from '@/lib/format'
@@ -351,7 +351,7 @@ export function ActionLog({ conversationId }: ActionLogProps) {
   const groups = groupByDate(actions)
 
   return (
-    <ScrollArea className="h-full">
+    <PaneScroll>
       <div className="space-y-4 p-3">
         {groups.map((g) => (
           <div key={g.bucket} className="space-y-2">
@@ -370,7 +370,7 @@ export function ActionLog({ conversationId }: ActionLogProps) {
           </div>
         ))}
       </div>
-    </ScrollArea>
+    </PaneScroll>
   )
 }
 

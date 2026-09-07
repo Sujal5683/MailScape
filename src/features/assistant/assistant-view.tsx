@@ -34,7 +34,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
-import { ScrollArea } from '@/components/ui/scroll-area'
+import { PaneScroll } from '@/components/ui/pane-scroll'
 import { GEMINI_MODELS, DEFAULT_MODEL_ID } from '@/lib/ai/models'
 import {
   Sheet,
@@ -267,7 +267,7 @@ function ConversationRail({
           )}
         </button>
       </div>
-      <ScrollArea className="flex-1">
+      <PaneScroll>
         <div className="space-y-1 p-2">
           {isLoading &&
             Array.from({ length: 4 }).map((_, i) => (
@@ -342,7 +342,7 @@ function ConversationRail({
             )
           })}
         </div>
-      </ScrollArea>
+      </PaneScroll>
     </div>
   )
 }
@@ -1145,42 +1145,40 @@ export function AssistantView() {
             )}
 
             {/* Messages */}
-            <div className="flex-1 overflow-hidden">
-              <ScrollArea className="h-full">
-                <div className="mx-auto max-w-3xl space-y-4 p-4 pb-20 md:pb-6">
-                  {msgsLoading && (
-                    <div className="space-y-3">
-                      {Array.from({ length: 2 }).map((_, i) => (
-                        <div
-                          key={i}
-                          className="h-24 animate-pulse rounded-lg bg-muted"
-                        />
-                      ))}
-                    </div>
-                  )}
-                  {!msgsLoading && isEmptyConversation && (
-                    <EmptyConversationPlaceholder />
-                  )}
-                  {!msgsLoading &&
-                    messages &&
-                    messages.map((m, i) => (
-                      <MessageMotion key={m.id} delay={Math.min(i * 0.02, 0.1)}>
-                        <MessageRenderer
-                          message={m}
-                          lastUserContent={lastUserContent}
-                          onConfirm={handleConfirm}
-                          streaming={isStreaming(m.id)}
-                          onStreamComplete={markComplete}
-                          onPickFollowUp={(prompt) => void handleSend(prompt)}
-                        />
-                      </MessageMotion>
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden [scrollbar-width:thin] [scrollbar-color:hsl(var(--border))_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-thumb:hover]:bg-muted-foreground/40">
+              <div className="mx-auto max-w-3xl space-y-4 p-4 pb-20 md:pb-6">
+                {msgsLoading && (
+                  <div className="space-y-3">
+                    {Array.from({ length: 2 }).map((_, i) => (
+                      <div
+                        key={i}
+                        className="h-24 animate-pulse rounded-lg bg-muted"
+                      />
                     ))}
-                  <AnimatePresence>
-                    {sendMessage.isPending && <ThinkingIndicator />}
-                  </AnimatePresence>
-                  <div ref={messagesEndRef} />
-                </div>
-              </ScrollArea>
+                  </div>
+                )}
+                {!msgsLoading && isEmptyConversation && (
+                  <EmptyConversationPlaceholder />
+                )}
+                {!msgsLoading &&
+                  messages &&
+                  messages.map((m, i) => (
+                    <MessageMotion key={m.id} delay={Math.min(i * 0.02, 0.1)}>
+                      <MessageRenderer
+                        message={m}
+                        lastUserContent={lastUserContent}
+                        onConfirm={handleConfirm}
+                        streaming={isStreaming(m.id)}
+                        onStreamComplete={markComplete}
+                        onPickFollowUp={(prompt) => void handleSend(prompt)}
+                      />
+                    </MessageMotion>
+                  ))}
+                <AnimatePresence>
+                  {sendMessage.isPending && <ThinkingIndicator />}
+                </AnimatePresence>
+                <div ref={messagesEndRef} />
+              </div>
             </div>
 
             {/* Input bar */}

@@ -7,7 +7,7 @@ import { colorClass } from '@/lib/category-meta'
 import { cn } from '@/lib/utils'
 import { formatRelative } from '@/lib/format'
 import type { SearchFilters, EmailListItem, CategorySummary } from '@/lib/types'
-import { ScrollArea } from '@/components/ui/scroll-area'
+import { PaneScroll } from '@/components/ui/pane-scroll'
 import { Badge } from '@/components/ui/badge'
 import { filtersToChips } from './search-helpers'
 import { Search, Star, Paperclip, Mail, MailOpen } from 'lucide-react'
@@ -91,7 +91,7 @@ export function SearchResultsList({
       </div>
 
       {/* List (scrollable) */}
-      <ScrollArea className="min-h-0 flex-1">
+      <PaneScroll>
         {items.length === 0 ? (
           <div className="p-3">
             <NoSearchResults query={filters.sender} />
@@ -113,7 +113,7 @@ export function SearchResultsList({
             )}
           </div>
         )}
-      </ScrollArea>
+      </PaneScroll>
     </div>
   )
 }
@@ -174,7 +174,7 @@ function SearchResultRow({
         <div className="flex items-center gap-2">
           <p
             className={cn(
-              'truncate text-sm',
+              'break-words text-sm',
               email.flags.isRead ? 'font-medium' : 'font-semibold',
             )}
           >
@@ -186,7 +186,7 @@ function SearchResultRow({
         </div>
         <p
           className={cn(
-            'truncate text-sm',
+            'break-words text-sm',
             email.flags.isRead ? 'text-muted-foreground' : 'font-medium text-foreground',
           )}
         >

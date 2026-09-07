@@ -29,7 +29,7 @@ import { cn } from '@/lib/utils'
 import { formatDateTime, formatBytes, formatRelative } from '@/lib/format'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { ScrollArea } from '@/components/ui/scroll-area'
+import { PaneScroll } from '@/components/ui/pane-scroll'
 import { Separator } from '@/components/ui/separator'
 import { SleekSeparator } from '@/components/common/separator'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
@@ -344,7 +344,7 @@ function EmailDetailContent({
       </div>
 
       {/* ===== Scrollable reading column ===== */}
-      <ScrollArea className="min-h-0 flex-1">
+      <PaneScroll>
         <div className="mx-auto w-full max-w-3xl px-4 py-5 pb-20 md:px-6 md:py-6 md:pb-6">
           {/* Snooze banner — only when actively snoozed */}
           {isActivelySnoozed(email.snoozedUntil) && (
@@ -698,7 +698,7 @@ function EmailDetailContent({
             )}
           </p>
         </div>
-      </ScrollArea>
+      </PaneScroll>
 
       {/* Attachment preview dialog (cosmetic) */}
       <Dialog

@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { ArchivedList } from './archived-list'
 import { ArchivedDetail } from './archived-detail'
 import { useArchivedEmails } from '@/hooks/use-queries'
-import { ScrollArea } from '@/components/ui/scroll-area'
+import { PaneScroll } from '@/components/ui/pane-scroll'
 import { SleekSeparator } from '@/components/common/separator'
 import { Archive, AlertTriangle } from 'lucide-react'
 import { MasterDetailLayout } from '@/components/layout/master-detail-layout'
@@ -72,11 +72,11 @@ export function ArchivedView() {
           masterMaxWidth={500}
           storageKey="archived-layout"
           master={
-            <ScrollArea className="min-h-0 flex-1">
+            <PaneScroll>
               <div className="p-2 pb-20 md:pb-2">
                 <ArchivedList selectedId={selectedId} onSelect={setSelectedId} />
               </div>
-            </ScrollArea>
+            </PaneScroll>
           }
           detail={<ArchivedDetail emailId={selectedId} onBack={() => setSelectedId(null)} />}
         />

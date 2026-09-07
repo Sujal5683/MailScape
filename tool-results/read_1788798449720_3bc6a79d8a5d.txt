@@ -1,0 +1,904 @@
+     1→'use client'
+     2→
+     3→import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+     4→import { api, type ClassificationResultDTO } from '@/lib/api-client'
+     5→import { qk } from '@/lib/query-keys'
+     6→import { useToast } from '@/hooks/use-toast'
+     7→import { formatDateTime } from '@/lib/format'
+     8→import type {
+     9→  SearchFilters,
+    10→  SavedSearch,
+    11→  EmailTemplate,
+    12→  EmailTemplateCategory,
+    13→  AssistantMode,
+    14→  Recipient,
+    15→  AuditSourceSurface,
+    16→} from '@/lib/types'
+    17→import type { WeeklyDigest } from '@/app/api/assistant/digest/route'
+    18→import type { SmartRepliesResult } from '@/app/api/emails/[messageId]/smart-replies/route'
+    19→import {
+    20→  useOptimisticMarkRead,
+    21→  useOptimisticStar,
+    22→  useOptimisticImportant,
+    23→} from '@/lib/mutations/email-mutations'
+    24→
+    25→// ---------- Accounts ----------
+    26→export function useAccounts() {
+    27→  return useQuery({ queryKey: qk.accounts, queryFn: api.accounts.list })
+    28→}
+    29→export function useSyncAccount() {
+    30→  const qc = useQueryClient()
+    31→  return useMutation({
+    32→    mutationFn: (accountId: string) => api.accounts.sync(accountId),
+    33→    onSuccess: () => {
+    34→      qc.invalidateQueries({ queryKey: qk.accounts })
+    35→      qc.invalidateQueries({ queryKey: ['emails'] })
+    36→      qc.invalidateQueries({ queryKey: qk.dashboard() })
+    37→      qc.invalidateQueries({ queryKey: qk.categories() })
+    38→    },
+    39→  })
+    40→}
+    41→
+    42→// ---------- Emails ----------
+    43→export function useEmails(params: Parameters<typeof api.emails.list>[0] = {}) {
+    44→  return useQuery({
+    45→    queryKey: qk.emails(params),
+    46→    queryFn: () => api.emails.list(params),
+    47→    placeholderData: (prev) => prev,
+    48→  })
+    49→}
+    50→export function useEmail(id: string | null) {
+    51→  return useQuery({
+    52→    queryKey: id ? qk.email(id) : ['emails', 'detail', 'none'],
+    53→    queryFn: () => api.emails.get(id!),
+    54→    enabled: !!id,
+    55→  })
+    56→}
+    57→// Mark an email read/unread with an OPTIMISTIC update across every email
+    58→// cache (inbox + mailbox buckets + detail + archived + search results) and
+    59→// rollback on error. See `src/lib/mutations/email-mutations.ts` for the shared
+    60→// optimistic strategy. The hook keeps the legacy `{ id, read }` signature so
+    61→// every existing caller (inbox-view, email-detail, search-results, email-list,
+    62→// keyboard shortcuts) works unchanged.
+    63→export function useMarkRead() {
+    64→  return useOptimisticMarkRead()
+    65→}
+    66→// Star/unstar — same optimistic strategy as useMarkRead.
+    67→export function useStarEmail() {
+    68→  return useOptimisticStar()
+    69→}
+    70→export function useThread(threadId: string | null) {
+    71→  return useQuery({
+    72→    queryKey: threadId ? qk.thread(threadId) : ['threads', 'none'],
+    73→    queryFn: () => api.emails.thread(threadId!),
+    74→    enabled: !!threadId,
+    75→  })
+    76→}
+    77→export function useMarkImportant() {
+    78→  return useOptimisticImportant()
+    79→}
+    80→export function useClassificationResults(emailId: string | null) {
+    81→  return useQuery({
+    82→    queryKey: emailId
+    83→      ? ['emails', 'detail', emailId, 'classification']
+    84→      : ['emails', 'detail', 'none', 'classification'],
+    85→    queryFn: () => api.emails.classification(emailId!) as Promise<ClassificationResultDTO | null>,
+    86→    enabled: !!emailId,
+    87→  })
+    88→}
+    89→
+    90→// Snooze an email until a later time (or unsnooze with `until: null`).
+    91→// On success: invalidates the email list + the open email detail (so the
+    92→// toolbar reflects the new state) + the dashboard, and shows a toast that
+    93→// varies by direction so the user gets clear feedback either way.
+    94→export function useSnoozeEmail() {
+    95→  const qc = useQueryClient()
+    96→  const { toast } = useToast()
+    97→  return useMutation({
+    98→    mutationFn: ({ id, until }: { id: string; until: string | null }) =>
+    99→      api.emails.snooze(id, until),
+   100→    onSuccess: (_d, { id, until }) => {
+   101→      qc.invalidateQueries({ queryKey: qk.email(id) })
+   102→      qc.invalidateQueries({ queryKey: ['emails'] })
+   103→      qc.invalidateQueries({ queryKey: qk.dashboard() })
+   104→      if (until) {
+   105→        toast({
+   106→          title: 'Snoozed until',
+   107→          description: formatDateTime(until),
+   108→        })
+   109→      } else {
+   110→        toast({ title: 'Email unsnoozed' })
+   111→      }
+   112→    },
+   113→  })
+   114→}
+   115→
+   116→// ---------- Archived emails ----------
+   117→// The Archive view's three hooks. Restore + permanent-delete invalidate the
+   118→// inbox list (['emails']), the archive list (qk.archived()), and the dashboard
+   119→// so every surface that aggregates counts stays consistent after a mutation.
+   120→
+   121→// List of archived emails (isArchived=true), ordered by updatedAt desc.
+   122→export function useArchivedEmails() {
+   123→  return useQuery({
+   124→    queryKey: qk.archived(),
+   125→    queryFn: () => api.archivedEmails.list(),
+   126→    placeholderData: (prev) => prev,
+   127→  })
+   128→}
+   129→
+   130→// Restore an archived email back to the inbox (clears isArchived).
+   131→export function useRestoreEmail() {
+   132→  const qc = useQueryClient()
+   133→  const { toast } = useToast()
+   134→  return useMutation({
+   135→    mutationFn: (id: string) => api.emails.restore(id),
+   136→    onSuccess: (_d, id) => {
+   137→      qc.invalidateQueries({ queryKey: qk.email(id) })
+   138→      qc.invalidateQueries({ queryKey: ['emails'] })
+   139→      qc.invalidateQueries({ queryKey: qk.archived() })
+   140→      qc.invalidateQueries({ queryKey: qk.dashboard() })
+   141→      toast({ title: 'Email restored to inbox' })
+   142→    },
+   143→  })
+   144→}
+   145→
+   146→// Permanently delete an email (HARD delete — irreversible). The api-client
+   147→// supplies { confirm: true } automatically; the route rejects anything else.
+   148→export function usePermanentDeleteEmail() {
+   149→  const qc = useQueryClient()
+   150→  const { toast } = useToast()
+   151→  return useMutation({
+   152→    mutationFn: (id: string) => api.emails.permanentDelete(id),
+   153→    onSuccess: (_d, id) => {
+   154→      qc.removeQueries({ queryKey: qk.email(id) })
+   155→      qc.invalidateQueries({ queryKey: ['emails'] })
+   156→      qc.invalidateQueries({ queryKey: qk.archived() })
+   157→      qc.invalidateQueries({ queryKey: qk.dashboard() })
+   158→      qc.invalidateQueries({ queryKey: qk.notifications('all') })
+   159→      qc.invalidateQueries({ queryKey: qk.deadlines() })
+   160→      qc.invalidateQueries({ queryKey: qk.actionItems() })
+   161→      toast({ title: 'Email permanently deleted' })
+   162→    },
+   163→  })
+   164→}
+   165→
+   166→// ---------- Drafts / Sent / Spam (mailbox bucket views) ----------
+   167→// Three thin hooks that reuse the unified useEmails machinery by passing a
+   168→// `filter` param. The bucket param is forwarded to the api-client, which adds
+   169→// it as a URLSearchParams entry; the GET /api/emails handler maps each value
+   170→// to the appropriate Prisma where clause (isDraft / isSent / isSpam = true,
+   171→// isArchived = false). Each hook lives next to useEmails so call sites read
+   172→// consistently with the rest of the mailbox code.
+   173→export function useDrafts() {
+   174→  return useEmails({ filter: 'drafts' })
+   175→}
+   176→export function useSentEmails() {
+   177→  return useEmails({ filter: 'sent' })
+   178→}
+   179→export function useSpamEmails() {
+   180→  return useEmails({ filter: 'spam' })
+   181→}
+   182→
+   183→// ---------- Categories ----------
+   184→export function useCategories() {
+   185→  return useQuery({ queryKey: qk.categories(), queryFn: api.categories.list })
+   186→}
+   187→export function useCreateCategory() {
+   188→  const qc = useQueryClient()
+   189→  const { toast } = useToast()
+   190→  return useMutation({
+   191→    mutationFn: api.categories.create,
+   192→    onSuccess: () => {
+   193→      qc.invalidateQueries({ queryKey: qk.categories() })
+   194→      toast({ title: 'Section created' })
+   195→    },
+   196→  })
+   197→}
+   198→export function useDeleteCategory() {
+   199→  const qc = useQueryClient()
+   200→  const { toast } = useToast()
+   201→  return useMutation({
+   202→    mutationFn: api.categories.remove,
+   203→    onSuccess: () => {
+   204→      qc.invalidateQueries({ queryKey: qk.categories() })
+   205→      toast({ title: 'Section deleted' })
+   206→    },
+   207→  })
+   208→}
+   209→
+   210→// ---------- Senders ----------
+   211→export function useSenders(q?: string) {
+   212→  return useQuery({ queryKey: qk.senders(q), queryFn: () => api.senders.list(q) })
+   213→}
+   214→export function useSender(id: string | null) {
+   215→  return useQuery({
+   216→    queryKey: id ? qk.sender(id) : ['senders', 'detail', 'none'],
+   217→    queryFn: () => api.senders.get(id!),
+   218→    enabled: !!id,
+   219→  })
+   220→}
+   221→
+   222→// ---------- Rules ----------
+   223→export function useRules() {
+   224→  return useQuery({ queryKey: qk.rules(), queryFn: api.rules.list })
+   225→}
+   226→export function useCreateRule() {
+   227→  const qc = useQueryClient()
+   228→  const { toast } = useToast()
+   229→  return useMutation({
+   230→    mutationFn: api.rules.create,
+   231→    onSuccess: () => {
+   232→      qc.invalidateQueries({ queryKey: qk.rules() })
+   233→      toast({ title: 'Rule created' })
+   234→    },
+   235→  })
+   236→}
+   237→export function useUpdateRule() {
+   238→  const qc = useQueryClient()
+   239→  const { toast } = useToast()
+   240→  return useMutation({
+   241→    mutationFn: ({ id, ...data }: Parameters<typeof api.rules.update>[1] & { id: string }) =>
+   242→      api.rules.update(id, data),
+   243→    onSuccess: () => {
+   244→      qc.invalidateQueries({ queryKey: qk.rules() })
+   245→      toast({ title: 'Rule updated' })
+   246→    },
+   247→  })
+   248→}
+   249→export function useDeleteRule() {
+   250→  const qc = useQueryClient()
+   251→  const { toast } = useToast()
+   252→  return useMutation({
+   253→    mutationFn: api.rules.remove,
+   254→    onSuccess: () => {
+   255→      qc.invalidateQueries({ queryKey: qk.rules() })
+   256→      toast({ title: 'Rule deleted' })
+   257→    },
+   258→  })
+   259→}
+   260→
+   261→// ---------- Dashboard ----------
+   262→export function useDashboard() {
+   263→  return useQuery({ queryKey: qk.dashboard(), queryFn: api.dashboard })
+   264→}
+   265→
+   266→// ---------- Notifications ----------
+   267→export function useNotifications(filter: 'all' | 'unread' | 'important' = 'all') {
+   268→  return useQuery({ queryKey: qk.notifications(filter), queryFn: () => api.notifications.list(filter) })
+   269→}
+   270→export function useMarkNotificationRead() {
+   271→  const qc = useQueryClient()
+   272→  return useMutation({
+   273→    mutationFn: api.notifications.markRead,
+   274→    onSuccess: () => {
+   275→      qc.invalidateQueries({ queryKey: ['notifications'] })
+   276→    },
+   277→  })
+   278→}
+   279→export function useMarkAllNotificationsRead() {
+   280→  const qc = useQueryClient()
+   281→  return useMutation({
+   282→    mutationFn: api.notifications.markAllRead,
+   283→    onSuccess: () => {
+   284→      qc.invalidateQueries({ queryKey: ['notifications'] })
+   285→    },
+   286→  })
+   287→}
+   288→export function useDeleteNotification() {
+   289→  const qc = useQueryClient()
+   290→  return useMutation({
+   291→    mutationFn: api.notifications.remove,
+   292→    onSuccess: () => {
+   293→      qc.invalidateQueries({ queryKey: ['notifications'] })
+   294→    },
+   295→  })
+   296→}
+   297→export function useTestNotification() {
+   298→  const qc = useQueryClient()
+   299→  const { toast } = useToast()
+   300→  return useMutation({
+   301→    mutationFn: api.notifications.test,
+   302→    onSuccess: () => {
+   303→      qc.invalidateQueries({ queryKey: ['notifications'] })
+   304→      qc.invalidateQueries({ queryKey: qk.notifications('all') })
+   305→      qc.invalidateQueries({ queryKey: qk.dashboard() })
+   306→      toast({ title: 'Test notification sent — check the Notifications view' })
+   307→    },
+   308→    onError: () => {
+   309→      toast({ title: 'Failed to send test notification', variant: 'destructive' })
+   310→    },
+   311→  })
+   312→}
+   313→
+   314→// ---------- Notification preferences (per-category) ----------
+   315→export type NotificationPrefChannel = 'in_app' | 'web' | 'push'
+   316→export interface NotificationPrefsData {
+   317→  channels: {
+   318→    channel: NotificationPrefChannel
+   319→    preferences: { categoryId: string | '__global__'; enabled: boolean }[]
+   320→  }[]
+   321→}
+   322→export function useNotificationPreferences() {
+   323→  return useQuery({
+   324→    queryKey: ['notification-preferences'],
+   325→    queryFn: () => api.notificationPreferences.list() as Promise<NotificationPrefsData>,
+   326→    placeholderData: (prev) => prev,
+   327→  })
+   328→}
+   329→export function useUpdateNotificationPreference() {
+   330→  const qc = useQueryClient()
+   331→  const { toast } = useToast()
+   332→  return useMutation({
+   333→    mutationFn: api.notificationPreferences.update,
+   334→    // Optimistic update so the Switch animates instantly — the refetched
+   335→    // data on settle reconciles any drift.
+   336→    onMutate: async ({ channel, categoryId, enabled }) => {
+   337→      await qc.cancelQueries({ queryKey: ['notification-preferences'] })
+   338→      const prev = qc.getQueryData<NotificationPrefsData>(['notification-preferences'])
+   339→      const key = categoryId ?? '__global__'
+   340→      if (prev) {
+   341→        const next: NotificationPrefsData = {
+   342→          ...prev,
+   343→          channels: prev.channels.map((c) =>
+   344→            c.channel === channel
+   345→              ? {
+   346→                  ...c,
+   347→                  preferences: c.preferences.map((p) =>
+   348→                    p.categoryId === key ? { ...p, enabled } : p,
+   349→                  ),
+   350→                }
+   351→              : c,
+   352→          ),
+   353→        }
+   354→        qc.setQueryData<NotificationPrefsData>(['notification-preferences'], next)
+   355→      }
+   356→      return { prev }
+   357→    },
+   358→    onError: (_err, _vars, ctx) => {
+   359→      if (ctx?.prev) {
+   360→        qc.setQueryData<NotificationPrefsData>(['notification-preferences'], ctx.prev)
+   361→      }
+   362→      toast({ title: 'Failed to update preference', variant: 'destructive' })
+   363→    },
+   364→    onSuccess: () => {
+   365→      toast({ title: 'Notification preference updated' })
+   366→    },
+   367→    onSettled: () => {
+   368→      qc.invalidateQueries({ queryKey: ['notification-preferences'] })
+   369→    },
+   370→  })
+   371→}
+   372→
+   373→// ---------- Deadlines / Action items ----------
+   374→export function useDeadlines(status?: 'open' | 'done' | 'missed' | 'all') {
+   375→  return useQuery({ queryKey: [...qk.deadlines(), status ?? 'all'], queryFn: () => api.deadlines(status) })
+   376→}
+   377→export function useActionItems() {
+   378→  return useQuery({ queryKey: qk.actionItems(), queryFn: api.actionItems })
+   379→}
+   380→export function useUpdateDeadline() {
+   381→  const qc = useQueryClient()
+   382→  const { toast } = useToast()
+   383→  return useMutation({
+   384→    mutationFn: ({ id, status }: { id: string; status: 'open' | 'done' | 'missed' }) =>
+   385→      fetch(`/api/deadlines/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) }).then((r) => r.json()),
+   386→    onSuccess: () => {
+   387→      qc.invalidateQueries({ queryKey: qk.deadlines() })
+   388→      qc.invalidateQueries({ queryKey: qk.dashboard() })
+   389→      toast({ title: 'Deadline updated' })
+   390→    },
+   391→  })
+   392→}
+   393→export function useDeleteDeadline() {
+   394→  const qc = useQueryClient()
+   395→  const { toast } = useToast()
+   396→  return useMutation({
+   397→    mutationFn: (id: string) =>
+   398→      fetch(`/api/deadlines/${id}`, { method: 'DELETE' }).then((r) => r.json()),
+   399→    onSuccess: () => {
+   400→      qc.invalidateQueries({ queryKey: qk.deadlines() })
+   401→      qc.invalidateQueries({ queryKey: qk.dashboard() })
+   402→      toast({ title: 'Deadline removed' })
+   403→    },
+   404→  })
+   405→}
+   406→export function useUpdateActionItem() {
+   407→  const qc = useQueryClient()
+   408→  return useMutation({
+   409→    mutationFn: ({ id, status }: { id: string; status: 'open' | 'done' }) =>
+   410→      fetch(`/api/action-items/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) }).then((r) => r.json()),
+   411→    onSuccess: () => {
+   412→      qc.invalidateQueries({ queryKey: qk.actionItems() })
+   413→      qc.invalidateQueries({ queryKey: qk.dashboard() })
+   414→    },
+   415→  })
+   416→}
+   417→
+   418→// ---------- Search ----------
+   419→export function useSearch(filters: SearchFilters | null) {
+   420→  return useQuery({
+   421→    queryKey: filters ? qk.search(filters) : ['search', 'none'],
+   422→    queryFn: () => api.search.structured(filters!),
+   423→    enabled: !!filters,
+   424→  })
+   425→}
+   426→export function useNaturalLanguageSearch() {
+   427→  return useMutation({ mutationFn: api.search.naturalLanguage })
+   428→}
+   429→
+   430→// ---------- Assistant ----------
+   431→export function useConversations(opts?: { includeArchived?: boolean }) {
+   432→  return useQuery({
+   433→    queryKey: qk.assistantConversations(),
+   434→    queryFn: () => api.assistant.conversations(opts),
+   435→  })
+   436→}
+   437→export function useConversationMessages(conversationId: string | null) {
+   438→  return useQuery({
+   439→    queryKey: conversationId ? qk.assistantMessages(conversationId) : ['assistant', 'messages', 'none'],
+   440→    queryFn: () => api.assistant.messages(conversationId!),
+   441→    enabled: !!conversationId,
+   442→  })
+   443→}
+   444→export function useConversationActions(conversationId: string | null) {
+   445→  return useQuery({
+   446→    queryKey: conversationId ? qk.assistantActions(conversationId) : ['assistant', 'actions', 'none'],
+   447→    queryFn: () => api.assistant.actions(conversationId!),
+   448→    enabled: !!conversationId,
+   449→  })
+   450→}
+   451→export function useSendMessage() {
+   452→  const qc = useQueryClient()
+   453→  return useMutation({
+   454→    mutationFn: ({ conversationId, content, mode, confirmedActionId }: { conversationId: string; content: string; mode?: AssistantMode; confirmedActionId?: string }) =>
+   455→      api.assistant.sendMessage(conversationId, { content, mode, ...(confirmedActionId ? { confirmedActionId } : {}) }),
+   456→    onSuccess: (_d, { conversationId }) => {
+   457→      qc.invalidateQueries({ queryKey: qk.assistantMessages(conversationId) })
+   458→      qc.invalidateQueries({ queryKey: qk.assistantActions(conversationId) })
+   459→      qc.invalidateQueries({ queryKey: qk.assistantConversations() })
+   460→      qc.invalidateQueries({ queryKey: ['emails'] })
+   461→      qc.invalidateQueries({ queryKey: qk.dashboard() })
+   462→    },
+   463→  })
+   464→}
+   465→export function useRevertAction() {
+   466→  const qc = useQueryClient()
+   467→  const { toast } = useToast()
+   468→  return useMutation({
+   469→    mutationFn: api.assistant.revert,
+   470→    onSuccess: () => {
+   471→      qc.invalidateQueries({ queryKey: ['assistant'] })
+   472→      qc.invalidateQueries({ queryKey: ['emails'] })
+   473→      toast({ title: 'Action reverted' })
+   474→    },
+   475→  })
+   476→}
+   477→export function useCreateConversation() {
+   478→  const qc = useQueryClient()
+   479→  return useMutation({
+   480→    mutationFn: api.assistant.createConversation,
+   481→    onSuccess: () => qc.invalidateQueries({ queryKey: qk.assistantConversations() }),
+   482→  })
+   483→}
+   484→// Open the printable/export view for a conversation in a new tab.
+   485→// Returns a mutation that triggers `window.open` (client-only). Use it for the
+   486→// "Export" button — the actual printable HTML is rendered server-side by
+   487→// GET /api/assistant/conversations/[id]/export.
+   488→export function useExportConversation() {
+   489→  return useMutation({
+   490→    mutationFn: async (conversationId: string) => {
+   491→      if (typeof window === 'undefined') return false
+   492→      window.open(
+   493→        `/api/assistant/conversations/${conversationId}/export`,
+   494→        '_blank',
+   495→        'noopener',
+   496→      )
+   497→      return true
+   498→    },
+   499→  })
+   500→}
+   501→
+   502→// PATCH { title?, archived? } — rename and/or (un)archive a conversation.
+   503→// Toasts a contextual message based on which field changed (title vs
+   504→// archived). Invalidates the conversation list cache so the rail re-renders.
+   505→export function useUpdateAssistantConversation() {
+   506→  const qc = useQueryClient()
+   507→  const { toast } = useToast()
+   508→  return useMutation({
+   509→    mutationFn: ({ id, title, archived }: { id: string; title?: string; archived?: boolean }) =>
+   510→      api.assistant.updateConversation(id, { ...(title !== undefined ? { title } : {}), ...(archived !== undefined ? { archived } : {}) }),
+   511→    onSuccess: (_d, { title, archived }) => {
+   512→      qc.invalidateQueries({ queryKey: qk.assistantConversations() })
+   513→      // Prefer the more-specific toast when both fields were supplied.
+   514→      if (archived !== undefined) {
+   515→        toast({ title: archived ? 'Conversation archived' : 'Conversation unarchived' })
+   516→      } else if (title !== undefined) {
+   517→        toast({ title: 'Conversation renamed' })
+   518→      }
+   519→    },
+   520→  })
+   521→}
+   522→
+   523→// HARD-DELETE a conversation + cascade. Toasts "Conversation deleted".
+   524→export function useDeleteConversation() {
+   525→  const qc = useQueryClient()
+   526→  const { toast } = useToast()
+   527→  return useMutation({
+   528→    mutationFn: (id: string) => api.assistant.deleteConversation(id),
+   529→    onSuccess: () => {
+   530→      qc.invalidateQueries({ queryKey: qk.assistantConversations() })
+   531→      qc.invalidateQueries({ queryKey: ['assistant'] })
+   532→      toast({ title: 'Conversation deleted' })
+   533→    },
+   534→  })
+   535→}
+   536→
+   537→// Convenience wrapper around useUpdateConversation for the archive/unarchive
+   538→// toggle. Same invalidation + toast behaviour, but with a narrower
+   539→// `{ id, archived }` signature so call sites (the context menu) stay clean.
+   540→export function useArchiveConversation() {
+   541→  const qc = useQueryClient()
+   542→  const { toast } = useToast()
+   543→  return useMutation({
+   544→    mutationFn: ({ id, archived }: { id: string; archived: boolean }) =>
+   545→      api.assistant.updateConversation(id, { archived }),
+   546→    onSuccess: (_d, { archived }) => {
+   547→      qc.invalidateQueries({ queryKey: qk.assistantConversations() })
+   548→      toast({ title: archived ? 'Conversation archived' : 'Conversation unarchived' })
+   549→    },
+   550→  })
+   551→}
+   552→
+   553→// ---------- Compose ----------
+   554→export function useRecipients(q: string) {
+   555→  return useQuery({
+   556→    queryKey: ['recipients', q],
+   557→    queryFn: () => api.compose.recipients(q),
+   558→    enabled: q.length > 1,
+   559→  })
+   560→}
+   561→export function useSendEmail() {
+   562→  const qc = useQueryClient()
+   563→  const { toast } = useToast()
+   564→  return useMutation({
+   565→    mutationFn: (data: { to: Recipient[]; cc?: Recipient[]; subject?: string; body?: string; confirm?: boolean }) =>
+   566→      api.compose.send({ accountId: '', ...data }),
+   567→    onSuccess: (data) => {
+   568→      if (data.ok) toast({ title: 'Email sent' })
+   569→      qc.invalidateQueries({ queryKey: ['emails'] })
+   570→    },
+   571→  })
+   572→}
+   573→export function useSaveDraft() {
+   574→  const { toast } = useToast()
+   575→  return useMutation({
+   576→    mutationFn: (data: { to: Recipient[]; cc?: Recipient[]; subject?: string; body?: string }) =>
+   577→      api.compose.saveDraft({ accountId: '', ...data }),
+   578→    onSuccess: () => toast({ title: 'Draft saved' }),
+   579→  })
+   580→}
+   581→
+   582→// ---------- Bulk email actions ----------
+   583→// Multi-select bulk operations on the inbox list. Posts to /api/emails/bulk
+   584→// which enforces per-account ownership and writes a single summarizing audit
+   585→// event. On success: invalidates the email list + dashboard (and notifications,
+   586→// since read/unread state changes affect notification badges) and surfaces a
+   587→// success toast. The hook itself does NOT clear the selection — the caller
+   588→// (InboxView) is responsible for clearing `selectedIds` after a successful op
+   589→// so the UI can optimistically dismiss the bulk-action bar.
+   590→export type BulkEmailAction =
+   591→  | 'read'
+   592→  | 'unread'
+   593→  | 'star'
+   594→  | 'unstar'
+   595→  | 'important'
+   596→  | 'unimportant'
+   597→  | 'archive'
+   598→  | 'delete'
+   599→
+   600→export function useBulkEmailAction() {
+   601→  const qc = useQueryClient()
+   602→  const { toast } = useToast()
+   603→  return useMutation({
+   604→    mutationFn: ({ ids, action }: { ids: string[]; action: BulkEmailAction }) =>
+   605→      fetch('/api/emails/bulk', {
+   606→        method: 'POST',
+   607→        headers: { 'Content-Type': 'application/json' },
+   608→        body: JSON.stringify({ ids, action }),
+   609→      }).then((r) => r.json() as Promise<{ ok: boolean; affected: number }>),
+   610→    onSuccess: (data) => {
+   611→      qc.invalidateQueries({ queryKey: ['emails'] })
+   612→      qc.invalidateQueries({ queryKey: qk.dashboard() })
+   613→      qc.invalidateQueries({ queryKey: ['notifications'] })
+   614→      const n = data.affected ?? 0
+   615→      toast({
+   616→        title: n === 1 ? '1 email updated' : `${n} emails updated`,
+   617→      })
+   618→    },
+   619→  })
+   620→}
+   621→
+   622→// ---------- Saved Searches (filter presets) ----------
+   623→// Saved searches are account-scoped persisted filter presets. The list is
+   624→// fetched once and cached under qk.savedSearches(); create/delete mutations
+   625→// invalidate that key so the panel re-renders with the new set immediately.
+   626→export function useSavedSearches() {
+   627→  return useQuery({
+   628→    queryKey: qk.savedSearches(),
+   629→    queryFn: api.savedSearches.list,
+   630→  })
+   631→}
+   632→export function useCreateSavedSearch() {
+   633→  const qc = useQueryClient()
+   634→  const { toast } = useToast()
+   635→  return useMutation({
+   636→    mutationFn: (data: { name: string; filters: SearchFilters }) =>
+   637→      api.savedSearches.create(data),
+   638→    onSuccess: () => {
+   639→      qc.invalidateQueries({ queryKey: qk.savedSearches() })
+   640→      toast({ title: 'Search saved' })
+   641→    },
+   642→    onError: () => {
+   643→      toast({ title: 'Failed to save search', variant: 'destructive' })
+   644→    },
+   645→  })
+   646→}
+   647→export function useDeleteSavedSearch() {
+   648→  const qc = useQueryClient()
+   649→  const { toast } = useToast()
+   650→  return useMutation({
+   651→    mutationFn: (id: string) => api.savedSearches.remove(id),
+   652→    onSuccess: () => {
+   653→      qc.invalidateQueries({ queryKey: qk.savedSearches() })
+   654→      toast({ title: 'Search removed' })
+   655→    },
+   656→    onError: () => {
+   657→      toast({ title: 'Failed to remove search', variant: 'destructive' })
+   658→    },
+   659→  })
+   660→}
+   661→
+   662→// ---------- Weekly digest ----------
+   663→// On-demand AI weekly digest. POSTs to /api/assistant/digest which gathers
+   664→// real 7-day mailbox stats and synthesizes a structured digest via the LLM
+   665→// (with a deterministic fallback if the LLM call fails). The digest is NOT
+   666→// persisted — every call regenerates it against the latest state so the user
+   667→// always sees fresh data. Errors surface a destructive toast; the calling
+   668→// component reads mutation.isPending for the loading state and mutation.data
+   669→// for the digest payload.
+   670→export function useWeeklyDigest() {
+   671→  const { toast } = useToast()
+   672→  return useMutation({
+   673→    mutationFn: async (): Promise<WeeklyDigest> => {
+   674→      const res = await fetch('/api/assistant/digest', { method: 'POST' })
+   675→      if (!res.ok) {
+   676→        const body = await res.json().catch(() => null)
+   677→        const msg = body && typeof body === 'object' && 'error' in body
+   678→          ? String((body as { error: string }).error)
+   679→          : `Failed to generate digest (${res.status})`
+   680→        throw new Error(msg)
+   681→      }
+   682→      return (await res.json()) as WeeklyDigest
+   683→    },
+   684→    onError: () => {
+   685→      toast({ title: 'Failed to generate digest', variant: 'destructive' })
+   686→    },
+   687→  })
+   688→}
+   689→
+   690→export type { SavedSearch }
+   691→
+   692→// ---------- Smart Replies ----------
+   693→// On-demand AI smart reply suggestions for a single email. POSTs to
+   694→// /api/emails/[id]/smart-replies which loads the email account-scoped, builds
+   695→// a prompt asking the LLM for 3 reply options (formal / brief / clarifying),
+   696→// and parses the model's JSON. On any failure the route returns a
+   697→// deterministic fallback, so the mutation resolves successfully either way.
+   698→// The result is NOT cached/persisted — every call regenerates against the
+   699→// latest email content. Errors surface a destructive toast; the calling
+   700→// component reads mutation.isPending for the loading state and mutation.data
+   701→// for the replies payload.
+   702→export function useSmartReplies() {
+   703→  const { toast } = useToast()
+   704→  return useMutation({
+   705→    mutationFn: async (emailId: string): Promise<SmartRepliesResult> => {
+   706→      const res = await fetch(`/api/emails/${emailId}/smart-replies`, {
+   707→        method: 'POST',
+   708→        headers: { 'Content-Type': 'application/json' },
+   709→      })
+   710→      if (!res.ok) {
+   711→        const body = await res.json().catch(() => null)
+   712→        const msg =
+   713→          body && typeof body === 'object' && 'error' in body
+   714→            ? String((body as { error: string }).error)
+   715→            : `Failed to generate smart replies (${res.status})`
+   716→        throw new Error(msg)
+   717→      }
+   718→      return (await res.json()) as SmartRepliesResult
+   719→    },
+   720→    onError: () => {
+   721→      toast({ title: 'Failed to generate smart replies', variant: 'destructive' })
+   722→    },
+   723→  })
+   724→}
+   725→
+   726→// ---------- Email Templates (compose presets) ----------
+   727→// Account-scoped email templates persisted so the user can reuse common
+   728→// replies/announcements. The list is fetched once per category (default
+   729→// 'all') and cached under qk.templates(category). Mutations invalidate the
+   730→// whole 'templates' family (any category key) so the panel always reflects
+   731→// the latest set after a create/update/delete.
+   732→export function useTemplates(category?: EmailTemplateCategory) {
+   733→  return useQuery({
+   734→    queryKey: qk.templates(category),
+   735→    queryFn: async () => {
+   736→      const qs = category ? `?category=${encodeURIComponent(category)}` : ''
+   737→      const res = await fetch(`/api/templates${qs}`)
+   738→      if (!res.ok) {
+   739→        const body = await res.json().catch(() => null)
+   740→        const msg =
+   741→          body && typeof body === 'object' && 'error' in body
+   742→            ? String((body as { error: string }).error)
+   743→            : `Failed to load templates (${res.status})`
+   744→        throw new Error(msg)
+   745→      }
+   746→      return (await res.json()) as EmailTemplate[]
+   747→    },
+   748→  })
+   749→}
+   750→
+   751→export type TemplateInput = {
+   752→  name: string
+   753→  subject?: string
+   754→  body?: string
+   755→  category?: EmailTemplateCategory
+   756→}
+   757→
+   758→export function useCreateTemplate() {
+   759→  const qc = useQueryClient()
+   760→  const { toast } = useToast()
+   761→  return useMutation({
+   762→    mutationFn: async (data: TemplateInput): Promise<EmailTemplate> => {
+   763→      const res = await fetch('/api/templates', {
+   764→        method: 'POST',
+   765→        headers: { 'Content-Type': 'application/json' },
+   766→        body: JSON.stringify(data),
+   767→      })
+   768→      if (!res.ok) {
+   769→        const body = await res.json().catch(() => null)
+   770→        const msg =
+   771→          body && typeof body === 'object' && 'error' in body
+   772→            ? String((body as { error: string }).error)
+   773→            : `Failed to save template (${res.status})`
+   774→        throw new Error(msg)
+   775→      }
+   776→      return (await res.json()) as EmailTemplate
+   777→    },
+   778→    onSuccess: () => {
+   779→      // Invalidate every category variant of the templates key.
+   780→      qc.invalidateQueries({ queryKey: ['templates'] })
+   781→      toast({ title: 'Template saved' })
+   782→    },
+   783→    onError: () => {
+   784→      toast({ title: 'Failed to save template', variant: 'destructive' })
+   785→    },
+   786→  })
+   787→}
+   788→
+   789→export function useUpdateTemplate() {
+   790→  const qc = useQueryClient()
+   791→  const { toast } = useToast()
+   792→  return useMutation({
+   793→    mutationFn: async ({
+   794→      id,
+   795→      ...data
+   796→    }: TemplateInput & { id: string }): Promise<EmailTemplate> => {
+   797→      const res = await fetch(`/api/templates/${id}`, {
+   798→        method: 'PUT',
+   799→        headers: { 'Content-Type': 'application/json' },
+   800→        body: JSON.stringify(data),
+   801→      })
+   802→      if (!res.ok) {
+   803→        const body = await res.json().catch(() => null)
+   804→        const msg =
+   805→          body && typeof body === 'object' && 'error' in body
+   806→            ? String((body as { error: string }).error)
+   807→            : `Failed to update template (${res.status})`
+   808→        throw new Error(msg)
+   809→      }
+   810→      return (await res.json()) as EmailTemplate
+   811→    },
+   812→    onSuccess: () => {
+   813→      qc.invalidateQueries({ queryKey: ['templates'] })
+   814→      toast({ title: 'Template updated' })
+   815→    },
+   816→    onError: () => {
+   817→      toast({ title: 'Failed to update template', variant: 'destructive' })
+   818→    },
+   819→  })
+   820→}
+   821→
+   822→export function useDeleteTemplate() {
+   823→  const qc = useQueryClient()
+   824→  const { toast } = useToast()
+   825→  return useMutation({
+   826→    mutationFn: async (id: string): Promise<{ ok: boolean }> => {
+   827→      const res = await fetch(`/api/templates/${id}`, { method: 'DELETE' })
+   828→      if (!res.ok) {
+   829→        const body = await res.json().catch(() => null)
+   830→        const msg =
+   831→          body && typeof body === 'object' && 'error' in body
+   832→            ? String((body as { error: string }).error)
+   833→            : `Failed to delete template (${res.status})`
+   834→        throw new Error(msg)
+   835→      }
+   836→      return (await res.json()) as { ok: boolean }
+   837→    },
+   838→    onSuccess: () => {
+   839→      qc.invalidateQueries({ queryKey: ['templates'] })
+   840→      toast({ title: 'Template deleted' })
+   841→    },
+   842→    onError: () => {
+   843→      toast({ title: 'Failed to delete template', variant: 'destructive' })
+   844→    },
+   845→  })
+   846→}
+   847→
+   848→export type { EmailTemplate, EmailTemplateCategory }
+   849→
+   850→// ---------- Audit Events (account activity log) ----------
+   851→// useInfiniteQuery drives the Audit Log timeline. Each page fetches one
+   852→// cursor-paginated batch from /api/audit-events; the timeline component
+   853→// concatenates page.items and exposes a "Load more" button as long as
+   854→// hasNextPage is true. The query key includes the filter object so changing
+   855→// the event-type / surface / search input resets to page 1 automatically.
+   856→export interface AuditEventFilters {
+   857→  type?: string
+   858→  surface?: AuditSourceSurface
+   859→  limit?: number
+   860→}
+   861→
+   862→export function useAuditEvents(filters: AuditEventFilters = {}) {
+   863→  return useInfiniteQuery({
+   864→    queryKey: qk.auditEvents(filters),
+   865→    queryFn: ({ pageParam }) => api.auditEvents.list({ ...filters, cursor: pageParam }),
+   866→    initialPageParam: undefined as string | undefined,
+   867→    getNextPageParam: (last) => last.nextCursor ?? undefined,
+   868→  })
+   869→}
+   870→
+   871→// ---------- Conversations ----------
+   872→export function useEmailConversations(params: { status?: string; followUp?: string } = {}) {
+   873→  return useQuery({
+   874→    queryKey: ['conversations', 'list', params],
+   875→    queryFn: () => api.conversations.list(params),
+   876→  })
+   877→}
+   878→export function useEmailConversationDetail(id: string | null) {
+   879→  return useQuery({
+   880→    queryKey: ['conversations', 'detail', id],
+   881→    queryFn: () => api.conversations.get(id!),
+   882→    enabled: !!id,
+   883→  })
+   884→}
+   885→export function useEmailConversation(emailId: string | null) {
+   886→  return useQuery({
+   887→    queryKey: ['conversations', 'for-email', emailId],
+   888→    queryFn: () => api.conversations.forEmail(emailId!),
+   889→    enabled: !!emailId,
+   890→  })
+   891→}
+   892→export function useUpdateEmailConversation() {
+   893→  const qc = useQueryClient()
+   894→  const { toast } = useToast()
+   895→  return useMutation({
+   896→    mutationFn: ({ id, ...data }: { id: string } & Partial<{ status: string; followUpState: string; importance: string }>) =>
+   897→      api.conversations.update(id, data),
+   898→    onSuccess: () => {
+   899→      qc.invalidateQueries({ queryKey: ['conversations'] })
+   900→      toast({ title: 'Conversation updated' })
+   901→    },
+   902→  })
+   903→}
+   904→

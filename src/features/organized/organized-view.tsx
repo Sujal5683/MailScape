@@ -8,7 +8,7 @@ import { SleekSeparator } from '@/components/common/separator'
 import { EmptyState, ErrorState } from '@/components/common/states'
 import type { CategorySummary } from '@/lib/types'
 import { Button } from '@/components/ui/button'
-import { ScrollArea } from '@/components/ui/scroll-area'
+import { PaneScroll } from '@/components/ui/pane-scroll'
 import { Layers, Plus, Mail } from 'lucide-react'
 import { CategoryCard } from './category-card'
 import { CategoryDetail } from './category-detail'
@@ -84,7 +84,7 @@ export function OrganizedView() {
       </header>
 
       {/* Body */}
-      <ScrollArea className="min-h-0 flex-1">
+      <PaneScroll>
         <div className="p-4 pb-20 md:pb-6">
           {isLoading ? (
             <CategorySkeleton count={9} />
@@ -116,7 +116,7 @@ export function OrganizedView() {
             </>
           )}
         </div>
-      </ScrollArea>
+      </PaneScroll>
 
       <CreateCategoryDialog open={createOpen} onOpenChange={setCreateOpen} />
     </div>

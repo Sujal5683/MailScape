@@ -3,7 +3,7 @@ name = "institutional-email-intelligence-backend"
 version = "0.1.0"
 description = "FastAPI backend foundation for the Institutional Email Intelligence app."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",

@@ -11,7 +11,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { ScrollArea } from '@/components/ui/scroll-area'
+import { PaneScroll } from '@/components/ui/pane-scroll'
 import { Separator } from '@/components/ui/separator'
 import {
   AlertDialog,
@@ -225,7 +225,7 @@ export function TemplatesPanel({ open, onOpenChange, onInsert }: TemplatesPanelP
                 )}
               </div>
             ) : (
-              <ScrollArea className="h-full">
+              <PaneScroll>
                 <div className="flex flex-col gap-4 p-3">
                   {groups.map((group) => (
                     <section key={group.category} aria-label={categoryLabel(group.category)}>
@@ -266,7 +266,7 @@ export function TemplatesPanel({ open, onOpenChange, onInsert }: TemplatesPanelP
                     </section>
                   ))}
                 </div>
-              </ScrollArea>
+              </PaneScroll>
             )}
           </div>
 

@@ -8,7 +8,7 @@ import { MailboxViewHeader } from './mailbox-view-header'
 import { EmptyState } from '@/components/common/states'
 import { SleekSeparator } from '@/components/common/separator'
 import { EmailListSkeleton } from '@/components/common/skeletons'
-import { ScrollArea } from '@/components/ui/scroll-area'
+import { PaneScroll } from '@/components/ui/pane-scroll'
 import { useEmails } from '@/hooks/use-queries'
 import { MasterDetailLayout } from '@/components/layout/master-detail-layout'
 import { Mail } from 'lucide-react'
@@ -92,7 +92,7 @@ export function MailboxFilterView({
           masterMaxWidth={500}
           storageKey="mailbox-layout"
           master={
-            <ScrollArea className="min-h-0 flex-1">
+            <PaneScroll>
               <div className="p-2 pb-20 md:pb-2">
                 {isLoading ? (
                   <EmailListSkeleton />
@@ -116,7 +116,7 @@ export function MailboxFilterView({
                   />
                 )}
               </div>
-            </ScrollArea>
+            </PaneScroll>
           }
           detail={<EmailDetail emailId={selectedId} onBack={() => setSelectedId(null)} />}
         />

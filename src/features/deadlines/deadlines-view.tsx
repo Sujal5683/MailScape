@@ -14,7 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 import { Separator } from '@/components/ui/separator'
-import { ScrollArea } from '@/components/ui/scroll-area'
+import { PaneScroll } from '@/components/ui/pane-scroll'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { CalendarClock, Check, Clock, AlertTriangle, Trash2, Inbox, ChevronRight, ListChecks, CircleDot, X } from 'lucide-react'
 import { motion, useReducedMotion } from 'framer-motion'
@@ -63,7 +63,7 @@ export function DeadlinesView() {
   }, [filtered])
 
   return (
-    <div className="h-full overflow-y-auto">
+    <PaneScroll>
       <div className="mx-auto max-w-6xl p-4 pb-20 md:p-6 md:pb-6">
         {/* Header */}
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -154,7 +154,7 @@ export function DeadlinesView() {
           </div>
         </div>
       </div>
-    </div>
+    </PaneScroll>
   )
 }
 

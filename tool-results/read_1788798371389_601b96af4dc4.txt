@@ -1,0 +1,1408 @@
+     1→'use client'
+     2→
+     3→// =============================================================================
+     4→// DashboardView — operational command center for the Institutional Email
+     5→// Intelligence app. Enhanced dashboard with animated KPI cards + sparklines,
+     6→// a gradient 14-day trend chart, a category distribution donut, top-sender
+     7→// bars, a deadline timeline, a deterministic "needs attention" panel, a recent
+     8→// activity stream, an AI brief with mini stat cards, and an action-items
+     9→// checklist. All sections hydrate behind skeletons via the single
+    10→// useDashboard() query (returns DashboardData).
+    11→// =============================================================================
+    12→
+    13→import {
+    14→  AreaChart,
+    15→  Area,
+    16→  LineChart,
+    17→  Line,
+    18→  PieChart,
+    19→  Pie,
+    20→  Cell,
+    21→  XAxis,
+    22→  YAxis,
+    23→  Tooltip,
+    24→  ResponsiveContainer,
+    25→  CartesianGrid,
+    26→} from 'recharts'
+    27→import {
+    28→  Mail,
+    29→  MailOpen,
+    30→  Star,
+    31→  Paperclip,
+    32→  Users,
+    33→  CalendarClock,
+    34→  Bell,
+    35→  Sparkles,
+    36→  Clock,
+    37→  AlertTriangle,
+    38→  Inbox,
+    39→  ArrowUpRight,
+    40→  ArrowRight,
+    41→  CheckCircle2,
+    42→  Circle,
+    43→  type LucideIcon,
+    44→} from 'lucide-react'
+    45→import { motion, useReducedMotion } from 'framer-motion'
+    46→import { useMemo, useState } from 'react'
+    47→
+    48→import { useDashboard } from '@/hooks/use-queries'
+    49→import { useUIStore } from '@/store/ui-store'
+    50→import type { DashboardData, Deadline } from '@/lib/types'
+    51→import { formatDate, formatRelative, daysUntil } from '@/lib/format'
+    52→import { colorClass } from '@/lib/category-meta'
+    53→import { cn } from '@/lib/utils'
+    54→
+    55→import {
+    56→  Card,
+    57→  CardContent,
+    58→  CardDescription,
+    59→  CardHeader,
+    60→  CardTitle,
+    61→  CardAction,
+    62→} from '@/components/ui/card'
+    63→import { Button } from '@/components/ui/button'
+    64→import { Badge } from '@/components/ui/badge'
+    65→import { Separator } from '@/components/ui/separator'
+    66→import { Skeleton } from '@/components/ui/skeleton'
+    67→import { Checkbox } from '@/components/ui/checkbox'
+    68→import { CategoryDot, CategoryIcon } from '@/components/common/category-icon'
+    69→import { SleekSeparator } from '@/components/common/separator'
+    70→import { StatsSkeleton, ChartSkeleton } from '@/components/common/skeletons'
+    71→import { ErrorState, EmptyState } from '@/components/common/states'
+    72→import { WeeklyDigestCard } from './weekly-digest-card'
+    73→
+    74→// -----------------------------------------------------------------------------
+    75→// Constants — the ONE allowed inline color usage (data-viz category colors).
+    76→// Maps a category color name (from category-meta) to an oklch string for
+    77→// recharts <Cell fill>. Everything else uses semantic Tailwind tokens.
+    78→// -----------------------------------------------------------------------------
+    79→
+    80→const OKLCH_COLOR_MAP: Record<string, string> = {
+    81→  amber: 'oklch(0.75 0.16 75)',
+    82→  blue: 'oklch(0.62 0.17 245)',
+    83→  violet: 'oklch(0.62 0.2 300)',
+    84→  teal: 'oklch(0.65 0.13 180)',
+    85→  rose: 'oklch(0.65 0.2 15)',
+    86→  red: 'oklch(0.62 0.22 25)',
+    87→  orange: 'oklch(0.7 0.17 55)',
+    88→  fuchsia: 'oklch(0.65 0.22 330)',
+    89→  green: 'oklch(0.65 0.16 150)',
+    90→  slate: 'oklch(0.6 0.02 250)',
+    91→}
+    92→
+    93→function oklchFor(color: string | null | undefined): string {
+    94→  if (!color) return OKLCH_COLOR_MAP.slate!
+    95→  return OKLCH_COLOR_MAP[color] ?? OKLCH_COLOR_MAP.slate!
+    96→}
+    97→
+    98→// -----------------------------------------------------------------------------
+    99→// Shared helpers
+   100→// -----------------------------------------------------------------------------
+   101→
+   102→type Tone = 'default' | 'warning' | 'destructive' | 'success'
+   103→
+   104→function toneTextClass(tone: Tone): string {
+   105→  switch (tone) {
+   106→    case 'warning':
+   107→      return 'text-warning'
+   108→    case 'destructive':
+   109→      return 'text-destructive'
+   110→    case 'success':
+   111→      return 'text-success'
+   112→    default:
+   113→      return 'text-foreground'
+   114→  }
+   115→}
+   116→
+   117→function toneBadgeClass(tone: Tone): string {
+   118→  switch (tone) {
+   119→    case 'warning':
+   120→      return 'bg-warning/15 text-warning border-warning/30'
+   121→    case 'destructive':
+   122→      return 'bg-destructive/15 text-destructive border-destructive/30'
+   123→    case 'success':
+   124→      return 'bg-success/15 text-success border-success/30'
+   125→    default:
+   126→      return 'bg-muted text-muted-foreground border-border'
+   127→  }
+   128→}
+   129→
+   130→function toneIconWrapClass(tone: Tone): string {
+   131→  switch (tone) {
+   132→    case 'warning':
+   133→      return 'bg-warning/10 text-warning'
+   134→    case 'destructive':
+   135→      return 'bg-destructive/10 text-destructive'
+   136→    case 'success':
+   137→      return 'bg-success/10 text-success'
+   138→    default:
+   139→      return 'bg-primary/10 text-primary'
+   140→  }
+   141→}
+   142→
+   143→/** Parse a YYYY-MM-DD trend date label into a short "Mon D" string. */
+   144→function formatTrendDate(iso: string): string {
+   145→  // Append T00:00:00 to avoid UTC-shifted day display.
+   146→  const d = new Date(`${iso}T00:00:00`)
+   147→  if (Number.isNaN(d.getTime())) return iso
+   148→  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+   149→}
+   150→
+   151→function getInitial(name: string | null, email: string): string {
+   152→  const src = (name ?? email).trim()
+   153→  return src ? src[0]!.toUpperCase() : '?'
+   154→}
+   155→
+   156→/** Build a categoryId → color lookup so deadlines can render the right dot. */
+   157→function buildCategoryColorMap(data: DashboardData | undefined): Map<string, string> {
+   158→  if (!data) return new Map()
+   159→  return new Map(data.categoryCounts.map((c) => [c.id, c.color]))
+   160→}
+   161→
+   162→/** Rotate through the category color names for sender bars (no per-sender category in summary). */
+   163→function senderColorAt(index: number, colors: string[]): string {
+   164→  if (colors.length === 0) return 'slate'
+   165→  return colors[index % colors.length]!
+   166→}
+   167→
+   168→// -----------------------------------------------------------------------------
+   169→// Motion variants — respect prefers-reduced-motion.
+   170→// -----------------------------------------------------------------------------
+   171→
+   172→function useStaggerVariants() {
+   173→  const prefersReducedMotion = useReducedMotion()
+   174→  return useMemo(
+   175→    () => ({
+   176→      container: {
+   177→        hidden: { opacity: prefersReducedMotion ? 1 : 0 },
+   178→        show: {
+   179→          opacity: 1,
+   180→          transition: { staggerChildren: prefersReducedMotion ? 0 : 0.05 },
+   181→        },
+   182→      },
+   183→      item: {
+   184→        hidden: { opacity: prefersReducedMotion ? 1 : 0, y: prefersReducedMotion ? 0 : 8 },
+   185→        show: {
+   186→          opacity: 1,
+   187→          y: 0,
+   188→          transition: { duration: 0.3, ease: 'easeOut' as const },
+   189→        },
+   190→      },
+   191→    }),
+   192→    [prefersReducedMotion],
+   193→  )
+   194→}
+   195→
+   196→// -----------------------------------------------------------------------------
+   197→// Main view
+   198→// -----------------------------------------------------------------------------
+   199→
+   200→export function DashboardView() {
+   201→  const { data, isLoading, isError, refetch } = useDashboard()
+   202→  const navigate = useUIStore((s) => s.navigate)
+   203→  const variants = useStaggerVariants()
+   204→
+   205→  // Category name → color map, passed to the WeeklyDigestCard so its deadline
+   206→  // swatches match the rest of the dashboard. Derived from the dashboard's
+   207→  // categoryCounts (already fetched) so no extra query is needed.
+   208→  const categoryColors = useMemo<Record<string, string>>(() => {
+   209→    const m: Record<string, string> = {}
+   210→    for (const c of data?.categoryCounts ?? []) m[c.name] = c.color
+   211→    return m
+   212→  }, [data])
+   213→
+   214→  if (isError) {
+   215→    return (
+   216→      <div className="h-full overflow-y-auto bg-background">
+   217→        <div className="mx-auto max-w-3xl p-6 pb-20 md:pb-6">
+   218→          <ErrorState
+   219→            title="Couldn't load the dashboard"
+   220→            description="The aggregated overview failed to load. You can try again."
+   221→            onRetry={() => refetch()}
+   222→          />
+   223→        </div>
+   224→      </div>
+   225→    )
+   226→  }
+   227→
+   228→  return (
+   229→    <div className="h-full overflow-y-auto bg-background">
+   230→      <div className="mx-auto max-w-7xl space-y-6 p-4 pb-20 md:p-6 md:pb-6">
+   231→        {/* ----------------------------------------------------------------- */}
+   232→        {/* Header                                                            */}
+   233→        {/* ----------------------------------------------------------------- */}
+   234→        <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+   235→          <div className="min-w-0">
+   236→            <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+   237→            <p className="text-sm text-muted-foreground">
+   238→              Operational overview of your inbox — synced in real time.
+   239→            </p>
+   240→          </div>
+   241→          <Button onClick={() => navigate('assistant')} className="self-start sm:self-auto">
+   242→            <Sparkles className="h-4 w-4" />
+   243→            Ask AI
+   244→          </Button>
+   245→        </header>
+   246→
+   247→        {/* ----------------------------------------------------------------- */}
+   248→        {/* KPI row — animated stagger                                        */}
+   249→        {/* ----------------------------------------------------------------- */}
+   250→        <section aria-label="Key metrics">
+   251→          {isLoading || !data ? (
+   252→            <StatsSkeleton count={8} />
+   253→          ) : (
+   254→            <motion.div
+   255→              variants={variants.container}
+   256→              initial="hidden"
+   257→              animate="show"
+   258→              className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4"
+   259→            >
+   260→              <KpiGrid data={data} variants={variants.item} />
+   261→            </motion.div>
+   262→          )}
+   263→        </section>
+   264→
+   265→        <SleekSeparator />
+   266→
+   267→        {/* ----------------------------------------------------------------- */}
+   268→        {/* AI Brief + Needs attention (top-right)                            */}
+   269→        {/* ----------------------------------------------------------------- */}
+   270→        <section className="grid gap-4 lg:grid-cols-3" aria-label="Brief and attention">
+   271→          <div className="lg:col-span-2">
+   272→            {isLoading || !data ? <BriefSkeleton /> : <AiBriefCard data={data} />}
+   273→          </div>
+   274→          <div>
+   275→            {isLoading || !data ? (
+   276→              <NeedsAttentionSkeleton />
+   277→            ) : (
+   278→              <NeedsAttentionCard data={data} />
+   279→            )}
+   280→          </div>
+   281→        </section>
+   282→
+   283→        {/* ----------------------------------------------------------------- */}
+   284→        {/* Weekly digest — on-demand AI synthesis of the last 7 days         */}
+   285→        {/* (richer than the deterministic AI Brief; generated via the LLM)   */}
+   286→        {/* ----------------------------------------------------------------- */}
+   287→        <section aria-label="Weekly digest">
+   288→          <WeeklyDigestCard categoryColors={categoryColors} />
+   289→        </section>
+   290→
+   291→        <SleekSeparator />
+   292→
+   293→        {/* ----------------------------------------------------------------- */}
+   294→        {/* Middle section — trend chart (span 2) + donut (span 1)            */}
+   295→        {/* ----------------------------------------------------------------- */}
+   296→        <section className="grid gap-4 lg:grid-cols-3" aria-label="Activity and sections">
+   297→          <div className="lg:col-span-2">
+   298→            {isLoading || !data ? (
+   299→              <ChartSkeleton />
+   300→            ) : (
+   301→              <TrendCard trend={data.trend} />
+   302→            )}
+   303→          </div>
+   304→          <div>
+   305→            {isLoading || !data ? (
+   306→              <DonutSkeleton />
+   307→            ) : (
+   308→              <CategoryDonutCard data={data} />
+   309→            )}
+   310→          </div>
+   311→        </section>
+   312→
+   313→        <SleekSeparator />
+   314→
+   315→        {/* ----------------------------------------------------------------- */}
+   316→        {/* Three column lists: senders, deadlines, recent activity           */}
+   317→        {/* ----------------------------------------------------------------- */}
+   318→        <section className="grid gap-4 lg:grid-cols-3" aria-label="Lists">
+   319→          <TopSendersCard data={data} loading={isLoading} />
+   320→          <DeadlinesCard data={data} loading={isLoading} />
+   321→          <RecentActivityCard data={data} loading={isLoading} />
+   322→        </section>
+   323→
+   324→        {/* ----------------------------------------------------------------- */}
+   325→        {/* Action items (if any)                                             */}
+   326→        {/* ----------------------------------------------------------------- */}
+   327→        <section aria-label="Action items">
+   328→          {isLoading || !data ? null : data.actionItems.length > 0 ? (
+   329→            <>
+   330→              <SleekSeparator />
+   331→              <ActionItemsCard data={data} />
+   332→            </>
+   333→          ) : null}
+   334→        </section>
+   335→      </div>
+   336→    </div>
+   337→  )
+   338→}
+   339→
+   340→// -----------------------------------------------------------------------------
+   341→// KPI grid + sparkline
+   342→// -----------------------------------------------------------------------------
+   343→
+   344→interface KpiDef {
+   345→  key: string
+   346→  label: string
+   347→  icon: LucideIcon
+   348→  value: number
+   349→  context: string
+   350→  tone: Tone
+   351→  spark?: number[]
+   352→  delta?: string
+   353→  onClick?: () => void
+   354→}
+   355→
+   356→function buildKpis(data: DashboardData, navigate: (view: 'inbox' | 'notifications', ctx?: { contextSearchQuery?: string }) => void): KpiDef[] {
+   357→  const t = data.totals
+   358→  const trendCounts = data.trend.map((d) => d.count)
+   359→  const todayCount = trendCounts[trendCounts.length - 1] ?? 0
+   360→  return [
+   361→    {
+   362→      key: 'emails',
+   363→      label: 'Total Emails',
+   364→      icon: Mail,
+   365→      value: t.emails,
+   366→      context: `${t.categories} sections`,
+   367→      tone: 'default',
+   368→      spark: trendCounts,
+   369→    },
+   370→    {
+   371→      key: 'unread',
+   372→      label: 'Unread',
+   373→      icon: MailOpen,
+   374→      value: t.unread,
+   375→      context: t.unread > 0 ? 'needs attention' : 'all caught up',
+   376→      tone: t.unread > 0 ? 'warning' : 'success',
+   377→      delta: t.unread > 0 ? `+${todayCount} today` : 'inbox zero',
+   378→      onClick: () => navigate('inbox', { contextSearchQuery: 'is:unread' }),
+   379→    },
+   380→    {
+   381→      key: 'important',
+   382→      label: 'Important',
+   383→      icon: Star,
+   384→      value: t.important,
+   385→      context: t.important > 0 ? 'flagged' : 'none flagged',
+   386→      tone: 'default',
+   387→      delta: t.important > 0 ? `${t.important} flagged` : 'none flagged',
+   388→      onClick: () => navigate('inbox', { contextSearchQuery: 'is:important' }),
+   389→    },
+   390→    {
+   391→      key: 'attachments',
+   392→      label: 'Attachments',
+   393→      icon: Paperclip,
+   394→      value: t.attachments,
+   395→      context: 'emails with files',
+   396→      tone: 'default',
+   397→      delta: `${t.attachments} files`,
+   398→    },
+   399→    {
+   400→      key: 'senders',
+   401→      label: 'Senders',
+   402→      icon: Users,
+   403→      value: t.senders,
+   404→      context: 'active contacts',
+   405→      tone: 'default',
+   406→      delta: `${t.senders} contacts`,
+   407→    },
+   408→    {
+   409→      key: 'deadlines',
+   410→      label: 'Open Deadlines',
+   411→      icon: CalendarClock,
+   412→      value: t.deadlinesOpen,
+   413→      context: t.deadlinesOpen > 0 ? 'pending action' : 'none open',
+   414→      tone: t.deadlinesOpen > 0 ? 'warning' : 'success',
+   415→      delta: t.deadlinesOpen > 0 ? `${t.deadlinesOpen} open` : 'all clear',
+   416→    },
+   417→    {
+   418→      key: 'notifications',
+   419→      label: 'Unread Alerts',
+   420→      icon: Bell,
+   421→      value: t.notificationsUnread,
+   422→      context: t.notificationsUnread > 0 ? 'new notifications' : 'inbox quiet',
+   423→      tone: t.notificationsUnread > 0 ? 'destructive' : 'success',
+   424→      delta: t.notificationsUnread > 0 ? `${t.notificationsUnread} new` : 'all read',
+   425→      onClick: () => navigate('notifications'),
+   426→    },
+   427→    {
+   428→      key: 'sections',
+   429→      label: 'Sections',
+   430→      icon: Inbox,
+   431→      value: t.categories,
+   432→      context: 'organized buckets',
+   433→      tone: 'default',
+   434→      delta: `${t.categories} sections`,
+   435→    },
+   436→  ]
+   437→}
+   438→
+   439→function KpiGrid({ data, variants }: { data: DashboardData; variants: any }) {
+   440→  const navigate = useUIStore((s) => s.navigate)
+   441→  const kpis = buildKpis(data, (view, ctx) => navigate(view, ctx))
+   442→  return (
+   443→    <>
+   444→      {kpis.map((k) => (
+   445→        <motion.div key={k.key} variants={variants}>
+   446→          <KpiCard def={k} />
+   447→        </motion.div>
+   448→      ))}
+   449→    </>
+   450→  )
+   451→}
+   452→
+   453→function KpiCard({ def }: { def: KpiDef }) {
+   454→  const Icon = def.icon
+   455→  return (
+   456→    <Card
+   457→      className={cn(
+   458→        'gap-0 py-4 transition-transform hover:-translate-y-0.5',
+   459→        def.onClick && 'cursor-pointer',
+   460→      )}
+   461→      onClick={def.onClick}
+   462→      role={def.onClick ? 'button' : undefined}
+   463→      tabIndex={def.onClick ? 0 : undefined}
+   464→      onKeyDown={(e) => {
+   465→        if (def.onClick && (e.key === 'Enter' || e.key === ' ')) {
+   466→          e.preventDefault()
+   467→          def.onClick()
+   468→        }
+   469→      }}
+   470→    >
+   471→      <CardContent className="space-y-2 px-4">
+   472→        <div className="flex items-center justify-between gap-2">
+   473→          <span className="truncate text-xs font-medium text-muted-foreground">
+   474→            {def.label}
+   475→          </span>
+   476→          <span
+   477→            className={cn(
+   478→              'flex h-7 w-7 shrink-0 items-center justify-center rounded-full',
+   479→              toneIconWrapClass(def.tone),
+   480→            )}
+   481→          >
+   482→            <Icon className="h-3.5 w-3.5" />
+   483→          </span>
+   484→        </div>
+   485→        <div className={cn('text-2xl font-semibold tabular-nums leading-none', toneTextClass(def.tone))}>
+   486→          {def.value.toLocaleString()}
+   487→        </div>
+   488→        <div className="flex items-center justify-between gap-2">
+   489→          <span className="truncate text-[11px] text-muted-foreground">{def.context}</span>
+   490→          {def.spark && def.spark.length > 1 ? (
+   491→            <Sparkline data={def.spark} />
+   492→          ) : def.delta ? (
+   493→            <span className="shrink-0 text-[11px] font-medium text-muted-foreground">
+   494→              {def.delta}
+   495→            </span>
+   496→          ) : null}
+   497→        </div>
+   498→      </CardContent>
+   499→    </Card>
+   500→  )
+   501→}
+   502→
+   503→function Sparkline({ data, color = 'var(--color-primary)' }: { data: number[]; color?: string }) {
+   504→  const chartData = data.map((v, i) => ({ i, v }))
+   505→  return (
+   506→    <div className="h-6 w-20 shrink-0">
+   507→      <ResponsiveContainer width="100%" height="100%">
+   508→        <LineChart data={chartData} margin={{ top: 1, right: 1, bottom: 1, left: 1 }}>
+   509→          <Line
+   510→            type="monotone"
+   511→            dataKey="v"
+   512→            stroke={color}
+   513→            strokeWidth={1.5}
+   514→            dot={false}
+   515→            isAnimationActive={false}
+   516→          />
+   517→        </LineChart>
+   518→      </ResponsiveContainer>
+   519→    </div>
+   520→  )
+   521→}
+   522→
+   523→// -----------------------------------------------------------------------------
+   524→// AI brief — summary + 4 mini stat cards with icons + Ask AI button
+   525→// -----------------------------------------------------------------------------
+   526→
+   527→const HIGHLIGHT_ICONS: LucideIcon[] = [MailOpen, CalendarClock, Star, Users]
+   528→
+   529→function AiBriefCard({ data }: { data: DashboardData }) {
+   530→  const navigate = useUIStore((s) => s.navigate)
+   531→  const brief = data.aiBrief
+   532→  return (
+   533→    <Card className="h-full gap-0 overflow-hidden">
+   534→      <CardHeader className="pb-3">
+   535→        <CardTitle className="flex items-center gap-2 text-base">
+   536→          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary">
+   537→            <Sparkles className="h-4 w-4" />
+   538→          </span>
+   539→          AI Brief
+   540→        </CardTitle>
+   541→        <CardDescription className="sr-only">
+   542→          Auto-generated summary of your inbox state
+   543→        </CardDescription>
+   544→        <CardAction>
+   545→          <Button size="sm" variant="outline" onClick={() => navigate('assistant')}>
+   546→            <Sparkles className="h-3.5 w-3.5" />
+   547→            Ask AI
+   548→          </Button>
+   549→        </CardAction>
+   550→      </CardHeader>
+   551→      <CardContent className="space-y-4">
+   552→        <p className="text-sm leading-relaxed text-foreground">{brief.summary}</p>
+   553→        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+   554→          {brief.highlights.slice(0, 4).map((h, i) => {
+   555→            const Icon = HIGHLIGHT_ICONS[i % HIGHLIGHT_ICONS.length]!
+   556→            return (
+   557→              <div
+   558→                key={h.label}
+   559→                className="rounded-lg border border-border/70 bg-muted/40 px-3 py-2"
+   560→              >
+   561→                <div className="flex items-center gap-1.5 text-muted-foreground">
+   562→                  <Icon className="h-3.5 w-3.5" />
+   563→                  <span className="text-[11px] uppercase tracking-wide">{h.label}</span>
+   564→                </div>
+   565→                <div className="mt-0.5 text-lg font-semibold tabular-nums text-foreground">
+   566→                  {h.value}
+   567→                </div>
+   568→              </div>
+   569→            )
+   570→          })}
+   571→        </div>
+   572→      </CardContent>
+   573→    </Card>
+   574→  )
+   575→}
+   576→
+   577→function BriefSkeleton() {
+   578→  return (
+   579→    <Card className="h-full gap-0">
+   580→      <CardHeader className="pb-3">
+   581→        <div className="flex items-center gap-2">
+   582→          <Skeleton className="h-7 w-7 rounded-full" />
+   583→          <Skeleton className="h-4 w-24" />
+   584→        </div>
+   585→      </CardHeader>
+   586→      <CardContent className="space-y-4">
+   587→        <div className="space-y-2">
+   588→          <Skeleton className="h-3.5 w-full" />
+   589→          <Skeleton className="h-3.5 w-4/5" />
+   590→        </div>
+   591→        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+   592→          {Array.from({ length: 4 }).map((_, i) => (
+   593→            <div key={i} className="rounded-lg border border-border/60 p-2 space-y-1.5">
+   594→              <Skeleton className="h-2.5 w-12" />
+   595→              <Skeleton className="h-4 w-8" />
+   596→            </div>
+   597→          ))}
+   598→        </div>
+   599→      </CardContent>
+   600→    </Card>
+   601→  )
+   602→}
+   603→
+   604→// -----------------------------------------------------------------------------
+   605→// "Needs your attention" — deterministic smart panel
+   606→// -----------------------------------------------------------------------------
+   607→
+   608→interface AttentionItem {
+   609→  key: string
+   610→  label: string
+   611→  count: number
+   612→  tone: Tone
+   613→  icon: LucideIcon
+   614→  onClick?: () => void
+   615→}
+   616→
+   617→function buildAttentionItems(data: DashboardData, navigate: (view: any, ctx?: any) => void): AttentionItem[] {
+   618→  const items: AttentionItem[] = []
+   619→  if (data.totals.important > 0) {
+   620→    items.push({
+   621→      key: 'important',
+   622→      label: 'Important emails need replies',
+   623→      count: data.totals.important,
+   624→      tone: 'warning',
+   625→      icon: Star,
+   626→      onClick: () => navigate('inbox', { contextSearchQuery: 'is:important' }),
+   627→    })
+   628→  }
+   629→  const overdue = data.deadlines.filter((d) => {
+   630→    const days = daysUntil(d.dueAt)
+   631→    return days !== null && days < 0
+   632→  })
+   633→  if (overdue.length > 0) {
+   634→    items.push({
+   635→      key: 'overdue',
+   636→      label: 'Deadline overdue',
+   637→      count: overdue.length,
+   638→      tone: 'destructive',
+   639→      icon: CalendarClock,
+   640→      onClick: () =>
+   641→        navigate('inbox', { contextEmailId: overdue[0]!.emailId ?? null }),
+   642→    })
+   643→  }
+   644→  if (data.totals.notificationsUnread > 0) {
+   645→    items.push({
+   646→      key: 'notifications',
+   647→      label: 'Unread urgent notifications',
+   648→      count: data.totals.notificationsUnread,
+   649→      tone: 'destructive',
+   650→      icon: Bell,
+   651→      onClick: () => navigate('notifications'),
+   652→    })
+   653→  }
+   654→  if (data.totals.unread > 0 && data.totals.important === 0) {
+   655→    items.push({
+   656→      key: 'unread',
+   657→      label: 'Unread emails waiting',
+   658→      count: data.totals.unread,
+   659→      tone: 'warning',
+   660→      icon: MailOpen,
+   661→      onClick: () => navigate('inbox', { contextSearchQuery: 'is:unread' }),
+   662→    })
+   663→  }
+   664→  return items
+   665→}
+   666→
+   667→function buildRecommendation(data: DashboardData): string {
+   668→  const parts: string[] = []
+   669→  if (data.totals.important > 0) {
+   670→    parts.push(`${data.totals.important} important email${data.totals.important === 1 ? '' : 's'} need${data.totals.important === 1 ? 's' : ''} replies`)
+   671→  }
+   672→  const overdue = data.deadlines.filter((d) => {
+   673→    const days = daysUntil(d.dueAt)
+   674→    return days !== null && days < 0
+   675→  })
+   676→  if (overdue.length > 0) {
+   677→    parts.push(`${overdue.length} deadline${overdue.length === 1 ? '' : 's'} overdue`)
+   678→  }
+   679→  if (data.totals.notificationsUnread > 0) {
+   680→    parts.push(`${data.totals.notificationsUnread} unread alert${data.totals.notificationsUnread === 1 ? '' : 's'}`)
+   681→  }
+   682→  if (parts.length === 0) {
+   683→    return 'Inbox is calm — nothing needs your attention right now.'
+   684→  }
+   685→  return `${parts.join(' · ')} · Review now`
+   686→}
+   687→
+   688→function NeedsAttentionCard({ data }: { data: DashboardData }) {
+   689→  const navigate = useUIStore((s) => s.navigate)
+   690→  const items = buildAttentionItems(data, navigate)
+   691→  const recommendation = buildRecommendation(data)
+   692→  const calm = items.length === 0
+   693→  return (
+   694→    <Card className="h-full gap-0">
+   695→      <CardHeader className="pb-3">
+   696→        <CardTitle className="flex items-center gap-2 text-base">
+   697→          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary">
+   698→            <Sparkles className="h-4 w-4" />
+   699→          </span>
+   700→          Needs your attention
+   701→        </CardTitle>
+   702→        <CardDescription className="sr-only">
+   703→          Smart synthesis of items needing action
+   704→        </CardDescription>
+   705→      </CardHeader>
+   706→      <CardContent className="space-y-3">
+   707→        <p className="text-sm leading-relaxed text-foreground">{recommendation}</p>
+   708→        {calm ? (
+   709→          <div className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/5 px-3 py-2.5 text-sm text-success">
+   710→            <CheckCircle2 className="h-4 w-4 shrink-0" />
+   711→            <span>You&apos;re on track — no pressing items.</span>
+   712→          </div>
+   713→        ) : (
+   714→          <ul className="space-y-1.5">
+   715→            {items.map((it) => {
+   716→              const Icon = it.icon
+   717→              return (
+   718→                <li key={it.key}>
+   719→                  <button
+   720→                    type="button"
+   721→                    onClick={it.onClick}
+   722→                    className="group flex w-full items-center gap-3 rounded-lg border border-border/60 bg-card px-3 py-2.5 text-left transition-colors hover:bg-accent/50"
+   723→                  >
+   724→                    <span
+   725→                      className={cn(
+   726→                        'flex h-8 w-8 shrink-0 items-center justify-center rounded-full',
+   727→                        toneIconWrapClass(it.tone),
+   728→                      )}
+   729→                    >
+   730→                      <Icon className="h-4 w-4" />
+   731→                    </span>
+   732→                    <div className="min-w-0 flex-1">
+   733→                      <div className="truncate text-sm font-medium text-foreground">
+   734→                        {it.label}
+   735→                      </div>
+   736→                    </div>
+   737→                    <Badge
+   738→                      variant="outline"
+   739→                      className={cn('shrink-0 tabular-nums', toneBadgeClass(it.tone))}
+   740→                    >
+   741→                      {it.count}
+   742→                    </Badge>
+   743→                    <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+   744→                  </button>
+   745→                </li>
+   746→              )
+   747→            })}
+   748→          </ul>
+   749→        )}
+   750→      </CardContent>
+   751→    </Card>
+   752→  )
+   753→}
+   754→
+   755→function NeedsAttentionSkeleton() {
+   756→  return (
+   757→    <Card className="h-full gap-0">
+   758→      <CardHeader className="pb-3">
+   759→        <div className="flex items-center gap-2">
+   760→          <Skeleton className="h-7 w-7 rounded-full" />
+   761→          <Skeleton className="h-4 w-32" />
+   762→        </div>
+   763→      </CardHeader>
+   764→      <CardContent className="space-y-3">
+   765→        <Skeleton className="h-3.5 w-full" />
+   766→        <Skeleton className="h-3.5 w-2/3" />
+   767→        <div className="space-y-2 pt-1">
+   768→          {Array.from({ length: 3 }).map((_, i) => (
+   769→            <div key={i} className="flex items-center gap-3 rounded-lg border border-border/60 p-2.5">
+   770→              <Skeleton className="h-8 w-8 rounded-full" />
+   771→              <Skeleton className="h-3.5 flex-1" />
+   772→              <Skeleton className="h-5 w-8 rounded-full" />
+   773→            </div>
+   774→          ))}
+   775→        </div>
+   776→      </CardContent>
+   777→    </Card>
+   778→  )
+   779→}
+   780→
+   781→// -----------------------------------------------------------------------------
+   782→// Trend chart v2 — gradient area + custom tooltip + delta header
+   783→// -----------------------------------------------------------------------------
+   784→
+   785→function TrendTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: { date: string; count: number } }> }) {
+   786→  if (!active || !payload || payload.length === 0) return null
+   787→  const p = payload[0]!.payload
+   788→  return (
+   789→    <Card className="gap-0 py-2 shadow-md">
+   790→      <CardContent className="px-3 py-0">
+   791→        <div className="text-xs font-medium text-foreground">{formatTrendDate(p.date)}</div>
+   792→        <div className="text-xs text-muted-foreground">
+   793→          {p.count} email{p.count === 1 ? '' : 's'}
+   794→        </div>
+   795→      </CardContent>
+   796→    </Card>
+   797→  )
+   798→}
+   799→
+   800→function TrendCard({ trend }: { trend: DashboardData['trend'] }) {
+   801→  const hasData = trend.length > 0
+   802→  const total = trend.reduce((acc, d) => acc + d.count, 0)
+   803→  const peak = trend.reduce((acc, d) => Math.max(acc, d.count), 0)
+   804→
+   805→  // Delta: last 7 days vs first 7 days (if trend has 14 entries).
+   806→  const lastHalf = trend.slice(Math.max(0, trend.length - 7)).reduce((acc, d) => acc + d.count, 0)
+   807→  const firstHalf = trend.slice(0, Math.max(0, trend.length - 7)).reduce((acc, d) => acc + d.count, 0)
+   808→  const deltaPct =
+   809→    firstHalf === 0
+   810→      ? lastHalf > 0
+   811→        ? 100
+   812→        : 0
+   813→      : Math.round(((lastHalf - firstHalf) / firstHalf) * 100)
+   814→  const deltaUp = deltaPct >= 0
+   815→
+   816→  return (
+   817→    <Card className="h-full gap-0">
+   818→      <CardHeader className="pb-2">
+   819→        <CardTitle className="text-base">Email Volume — Last 14 Days</CardTitle>
+   820→        <CardDescription className="flex flex-wrap items-center gap-x-2 gap-y-1">
+   821→          <span className="tabular-nums">{total.toLocaleString()} received</span>
+   822→          <Separator orientation="vertical" className="h-3" />
+   823→          <span>peak {peak}/day</span>
+   824→          <Separator orientation="vertical" className="h-3" />
+   825→          <span
+   826→            className={cn(
+   827→              'inline-flex items-center gap-0.5 tabular-nums',
+   828→              deltaUp ? 'text-success' : 'text-muted-foreground',
+   829→            )}
+   830→          >
+   831→            <ArrowUpRight className={cn('h-3 w-3', !deltaUp && 'rotate-90')} />
+   832→            {deltaUp ? '+' : ''}
+   833→            {deltaPct}% vs prev 7d
+   834→          </span>
+   835→        </CardDescription>
+   836→      </CardHeader>
+   837→      <CardContent>
+   838→        {hasData ? (
+   839→          <div className="h-[280px] w-full">
+   840→            <ResponsiveContainer width="100%" height="100%">
+   841→              <AreaChart data={trend} margin={{ top: 8, right: 12, left: -8, bottom: 0 }}>
+   842→                <defs>
+   843→                  <linearGradient id="trendFillV2" x1="0" y1="0" x2="0" y2="1">
+   844→                    <stop offset="0%" stopColor="var(--color-primary)" stopOpacity={0.35} />
+   845→                    <stop offset="100%" stopColor="var(--color-primary)" stopOpacity={0.05} />
+   846→                  </linearGradient>
+   847→                </defs>
+   848→                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
+   849→                <XAxis
+   850→                  dataKey="date"
+   851→                  tickFormatter={formatTrendDate}
+   852→                  stroke="var(--color-muted-foreground)"
+   853→                  tick={{ fontSize: 11 }}
+   854→                  tickLine={false}
+   855→                  axisLine={false}
+   856→                  interval={1}
+   857→                  minTickGap={8}
+   858→                />
+   859→                <YAxis
+   860→                  allowDecimals={false}
+   861→                  stroke="var(--color-muted-foreground)"
+   862→                  tick={{ fontSize: 11 }}
+   863→                  tickLine={false}
+   864→                  axisLine={false}
+   865→                  width={32}
+   866→                />
+   867→                <Tooltip content={<TrendTooltip />} cursor={{ stroke: 'var(--color-border)', strokeWidth: 1 }} />
+   868→                <Area
+   869→                  type="monotone"
+   870→                  dataKey="count"
+   871→                  stroke="var(--color-primary)"
+   872→                  strokeWidth={2}
+   873→                  fill="url(#trendFillV2)"
+   874→                  fillOpacity={1}
+   875→                  dot={false}
+   876→                  activeDot={{ r: 4, stroke: 'var(--color-primary)', strokeWidth: 2, fill: 'var(--color-background)' }}
+   877→                />
+   878→              </AreaChart>
+   879→            </ResponsiveContainer>
+   880→          </div>
+   881→        ) : (
+   882→          <div className="flex h-[280px] w-full items-center justify-center text-sm text-muted-foreground">
+   883→            No activity in the last 14 days.
+   884→          </div>
+   885→        )}
+   886→      </CardContent>
+   887→    </Card>
+   888→  )
+   889→}
+   890→
+   891→// -----------------------------------------------------------------------------
+   892→// Category distribution donut
+   893→// -----------------------------------------------------------------------------
+   894→
+   895→function DonutTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: { name: string; count: number } }> }) {
+   896→  if (!active || !payload || payload.length === 0) return null
+   897→  const p = payload[0]!.payload
+   898→  return (
+   899→    <Card className="gap-0 py-2 shadow-md">
+   900→      <CardContent className="px-3 py-0">
+   901→        <div className="text-xs font-medium text-foreground">{p.name}</div>
+   902→        <div className="text-xs text-muted-foreground">{p.count} emails</div>
+   903→      </CardContent>
+   904→    </Card>
+   905→  )
+   906→}
+   907→
+   908→function CategoryDonutCard({ data }: { data: DashboardData }) {
+   909→  const navigate = useUIStore((s) => s.navigate)
+   910→  const cats = data.categoryCounts
+   911→    .filter((c) => c.count > 0)
+   912→    .slice()
+   913→    .sort((a, b) => b.count - a.count)
+   914→    .slice(0, 6)
+   915→  const total = cats.reduce((acc, c) => acc + c.count, 0)
+   916→  const hasData = cats.length > 0
+   917→
+   918→  return (
+   919→    <Card className="h-full gap-0">
+   920→      <CardHeader className="pb-2">
+   921→        <CardTitle className="text-base">Section Distribution</CardTitle>
+   922→        <CardDescription>Top sections by email count</CardDescription>
+   923→      </CardHeader>
+   924→      <CardContent>
+   925→        {!hasData ? (
+   926→          <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">
+   927→            No sections in use yet.
+   928→          </div>
+   929→        ) : (
+   930→          <div className="flex flex-col items-center gap-4">
+   931→            <div className="relative h-44 w-44">
+   932→              <ResponsiveContainer width="100%" height="100%">
+   933→                <PieChart>
+   934→                  <Pie
+   935→                    data={cats}
+   936→                    dataKey="count"
+   937→                    nameKey="name"
+   938→                    innerRadius={50}
+   939→                    outerRadius={80}
+   940→                    paddingAngle={2}
+   941→                    stroke="var(--color-background)"
+   942→                    strokeWidth={2}
+   943→                    isAnimationActive={false}
+   944→                    onClick={(payload: any) => {
+   945→                      const id = payload?.id
+   946→                      if (id) navigate('organized', { contextCategoryId: id })
+   947→                    }}
+   948→                  >
+   949→                    {cats.map((c) => (
+   950→                      <Cell key={c.id} fill={oklchFor(c.color)} />
+   951→                    ))}
+   952→                  </Pie>
+   953→                  <Tooltip content={<DonutTooltip />} />
+   954→                </PieChart>
+   955→              </ResponsiveContainer>
+   956→              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+   957→                <span className="text-2xl font-semibold tabular-nums text-foreground">
+   958→                  {total.toLocaleString()}
+   959→                </span>
+   960→                <span className="text-[11px] text-muted-foreground">total</span>
+   961→              </div>
+   962→            </div>
+   963→            <ul className="w-full space-y-1.5">
+   964→              {cats.map((c) => (
+   965→                <li key={c.id}>
+   966→                  <button
+   967→                    type="button"
+   968→                    onClick={() => navigate('organized', { contextCategoryId: c.id })}
+   969→                    className="group flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left text-sm transition-colors hover:bg-accent/50"
+   970→                  >
+   971→                    <span
+   972→                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+   973→                      style={{ backgroundColor: oklchFor(c.color) }}
+   974→                    />
+   975→                    <CategoryIcon icon={c.icon} color={c.color} className="h-3.5 w-3.5 shrink-0" />
+   976→                    <span className="truncate font-medium text-foreground">{c.name}</span>
+   977→                    <span className="ml-auto shrink-0 tabular-nums text-muted-foreground">
+   978→                      {c.count}
+   979→                    </span>
+   980→                  </button>
+   981→                </li>
+   982→              ))}
+   983→            </ul>
+   984→          </div>
+   985→        )}
+   986→      </CardContent>
+   987→    </Card>
+   988→  )
+   989→}
+   990→
+   991→function DonutSkeleton() {
+   992→  return (
+   993→    <Card className="h-full gap-0">
+   994→      <CardHeader className="pb-2">
+   995→        <Skeleton className="h-4 w-32" />
+   996→        <Skeleton className="h-3 w-40" />
+   997→      </CardHeader>
+   998→      <CardContent className="flex flex-col items-center gap-4">
+   999→        <Skeleton className="h-44 w-44 rounded-full" />
+  1000→        <div className="w-full space-y-2">
+  1001→          {Array.from({ length: 5 }).map((_, i) => (
+  1002→            <div key={i} className="flex items-center gap-2">
+  1003→              <Skeleton className="h-2.5 w-2.5 rounded-full" />
+  1004→              <Skeleton className="h-3.5 flex-1" />
+  1005→              <Skeleton className="h-3 w-6" />
+  1006→            </div>
+  1007→          ))}
+  1008→        </div>
+  1009→      </CardContent>
+  1010→    </Card>
+  1011→  )
+  1012→}
+  1013→
+  1014→// -----------------------------------------------------------------------------
+  1015→// Top senders — horizontal bars tinted by rotating category color
+  1016→// -----------------------------------------------------------------------------
+  1017→
+  1018→function TopSendersCard({ data, loading }: { data: DashboardData | undefined; loading: boolean }) {
+  1019→  const navigate = useUIStore((s) => s.navigate)
+  1020→  const colors = useMemo(
+  1021→    () =>
+  1022→      (data?.categoryCounts ?? [])
+  1023→        .filter((c) => c.count > 0)
+  1024→        .slice()
+  1025→        .sort((a, b) => b.count - a.count)
+  1026→        .map((c) => c.color),
+  1027→    [data],
+  1028→  )
+  1029→
+  1030→  return (
+  1031→    <Card className="h-full gap-0">
+  1032→      <CardHeader className="pb-2">
+  1033→        <CardTitle className="text-base">Top Senders</CardTitle>
+  1034→        <CardDescription>Most frequent contacts</CardDescription>
+  1035→      </CardHeader>
+  1036→      <CardContent>
+  1037→        <div className="max-h-96 overflow-y-auto pr-1">
+  1038→          {loading || !data ? (
+  1039→            <div className="space-y-2">
+  1040→              {Array.from({ length: 5 }).map((_, i) => (
+  1041→                <div
+  1042→                  key={i}
+  1043→                  className="flex items-center gap-3 rounded-lg border border-border/60 p-2.5"
+  1044→                >
+  1045→                  <Skeleton className="h-9 w-9 rounded-full" />
+  1046→                  <div className="flex-1 space-y-1.5">
+  1047→                    <Skeleton className="h-3.5 w-32" />
+  1048→                    <Skeleton className="h-3 w-40" />
+  1049→                  </div>
+  1050→                  <Skeleton className="h-5 w-10 rounded-full" />
+  1051→                </div>
+  1052→              ))}
+  1053→            </div>
+  1054→          ) : data.topSenders.length === 0 ? (
+  1055→            <EmptyRow icon={Users} label="No senders yet" />
+  1056→          ) : (
+  1057→            <ul className="space-y-1.5">
+  1058→              {data.topSenders.map((s, idx) => {
+  1059→                const color = senderColorAt(idx, colors)
+  1060→                const max = Math.max(...data.topSenders.map((x) => x.count), 1)
+  1061→                const pct = Math.max(8, Math.round((s.count / max) * 100))
+  1062→                return (
+  1063→                  <li key={s.id}>
+  1064→                    <button
+  1065→                      type="button"
+  1066→                      onClick={() => navigate('senders', { contextSenderId: s.id })}
+  1067→                      className="group flex w-full items-center gap-3 rounded-lg border border-border/60 p-2.5 text-left transition-colors hover:bg-accent/50"
+  1068→                    >
+  1069→                      <div
+  1070→                        className={cn(
+  1071→                          'flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold cat-bg-soft cat-text',
+  1072→                          colorClass(color),
+  1073→                        )}
+  1074→                      >
+  1075→                        {getInitial(s.name, s.email)}
+  1076→                      </div>
+  1077→                      <div className="min-w-0 flex-1">
+  1078→                        <div className="truncate text-sm font-medium text-foreground">
+  1079→                          {s.name ?? s.email}
+  1080→                        </div>
+  1081→                        <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+  1082→                          <div
+  1083→                            className={cn('h-full rounded-full cat-dot', colorClass(color))}
+  1084→                            style={{ width: `${pct}%` }}
+  1085→                          />
+  1086→                        </div>
+  1087→                        {s.name && (
+  1088→                          <div className="mt-0.5 truncate text-xs text-muted-foreground">
+  1089→                            {s.email}
+  1090→                          </div>
+  1091→                        )}
+  1092→                      </div>
+  1093→                      <Badge variant="secondary" className="shrink-0 tabular-nums">
+  1094→                        {s.count}
+  1095→                      </Badge>
+  1096→                    </button>
+  1097→                  </li>
+  1098→                )
+  1099→              })}
+  1100→            </ul>
+  1101→          )}
+  1102→        </div>
+  1103→      </CardContent>
+  1104→    </Card>
+  1105→  )
+  1106→}
+  1107→
+  1108→// -----------------------------------------------------------------------------
+  1109→// Open deadlines — vertical timeline
+  1110→// -----------------------------------------------------------------------------
+  1111→
+  1112→function deadlineTone(d: Deadline): Tone {
+  1113→  const days = daysUntil(d.dueAt)
+  1114→  if (days === null) return 'default'
+  1115→  if (days < 0) return 'destructive'
+  1116→  if (days <= 2) return 'warning'
+  1117→  return 'default'
+  1118→}
+  1119→
+  1120→function deadlineLabel(d: Deadline): string {
+  1121→  const days = daysUntil(d.dueAt)
+  1122→  if (days === null) return 'No due date'
+  1123→  if (days < 0) return `${Math.abs(days)}d overdue`
+  1124→  if (days === 0) return 'Due today'
+  1125→  if (days === 1) return 'Due tomorrow'
+  1126→  return `In ${days}d`
+  1127→}
+  1128→
+  1129→function DeadlinesCard({ data, loading }: { data: DashboardData | undefined; loading: boolean }) {
+  1130→  const navigate = useUIStore((s) => s.navigate)
+  1131→  const categoryColorMap = buildCategoryColorMap(data)
+  1132→  const deadlines = data?.deadlines ?? []
+  1133→
+  1134→  return (
+  1135→    <Card className="h-full gap-0">
+  1136→      <CardHeader className="pb-2">
+  1137→        <CardTitle className="text-base">Open Deadlines</CardTitle>
+  1138→        <CardDescription>Tracked action items with due dates</CardDescription>
+  1139→      </CardHeader>
+  1140→      <CardContent>
+  1141→        <div className="max-h-96 overflow-y-auto pr-2">
+  1142→          {loading || !data ? (
+  1143→            <div className="space-y-3 pl-2">
+  1144→              {Array.from({ length: 4 }).map((_, i) => (
+  1145→                <div key={i} className="flex gap-3">
+  1146→                  <Skeleton className="mt-1 h-2.5 w-2.5 rounded-full" />
+  1147→                  <div className="flex-1 space-y-2">
+  1148→                    <Skeleton className="h-3.5 w-3/4" />
+  1149→                    <Skeleton className="h-3 w-1/2" />
+  1150→                  </div>
+  1151→                </div>
+  1152→              ))}
+  1153→            </div>
+  1154→          ) : deadlines.length === 0 ? (
+  1155→            <EmptyState
+  1156→              icon={CheckCircle2}
+  1157→              title="No open deadlines"
+  1158→              description="You're on track."
+  1159→              className="mx-auto max-w-xs border-transparent bg-transparent p-4"
+  1160→            />
+  1161→          ) : (
+  1162→            <ol className="relative space-y-3 pl-1">
+  1163→              <span
+  1164→                aria-hidden
+  1165→                className="absolute left-[5px] top-2 bottom-2 w-px bg-border"
+  1166→              />
+  1167→              {deadlines.slice(0, 8).map((d) => {
+  1168→                const tone = deadlineTone(d)
+  1169→                const color = d.categoryId ? categoryColorMap.get(d.categoryId) : null
+  1170→                return (
+  1171→                  <li key={d.id} className="relative pl-6">
+  1172→                    <span
+  1173→                      className={cn(
+  1174→                        'absolute left-0 top-1.5 h-2.5 w-2.5 rounded-full ring-2 ring-background',
+  1175→                        color
+  1176→                          ? cn('cat-dot', colorClass(color))
+  1177→                          : tone === 'destructive'
+  1178→                            ? 'bg-destructive'
+  1179→                            : tone === 'warning'
+  1180→                              ? 'bg-warning'
+  1181→                              : 'bg-muted-foreground/50',
+  1182→                      )}
+  1183→                    />
+  1184→                    <button
+  1185→                      type="button"
+  1186→                      onClick={() => d.emailId && navigate('inbox', { contextEmailId: d.emailId })}
+  1187→                      className="group block w-full text-left"
+  1188→                    >
+  1189→                      <div className="flex items-start justify-between gap-2">
+  1190→                        <span className="truncate text-sm font-medium text-foreground group-hover:underline">
+  1191→                          {d.title}
+  1192→                        </span>
+  1193→                        <Badge
+  1194→                          variant="outline"
+  1195→                          className={cn('shrink-0 gap-1', toneBadgeClass(tone))}
+  1196→                        >
+  1197→                          {tone === 'destructive' && <AlertTriangle className="h-3 w-3" />}
+  1198→                          {deadlineLabel(d)}
+  1199→                        </Badge>
+  1200→                      </div>
+  1201→                      {d.emailSubject && (
+  1202→                        <div className="truncate text-xs text-muted-foreground">
+  1203→                          {d.emailSubject}
+  1204→                        </div>
+  1205→                      )}
+  1206→                      <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
+  1207→                        <Clock className="h-3 w-3" />
+  1208→                        <span>{d.dueAt ? formatDate(d.dueAt) : 'No due date'}</span>
+  1209→                        {d.categoryName && (
+  1210→                          <>
+  1211→                            <Separator orientation="vertical" className="h-3" />
+  1212→                            <span className="truncate">{d.categoryName}</span>
+  1213→                          </>
+  1214→                        )}
+  1215→                      </div>
+  1216→                    </button>
+  1217→                  </li>
+  1218→                )
+  1219→              })}
+  1220→            </ol>
+  1221→          )}
+  1222→        </div>
+  1223→      </CardContent>
+  1224→    </Card>
+  1225→  )
+  1226→}
+  1227→
+  1228→// -----------------------------------------------------------------------------
+  1229→// Recent activity — avatar initial tinted by category
+  1230→// -----------------------------------------------------------------------------
+  1231→
+  1232→function RecentActivityCard({ data, loading }: { data: DashboardData | undefined; loading: boolean }) {
+  1233→  const navigate = useUIStore((s) => s.navigate)
+  1234→  return (
+  1235→    <Card className="h-full gap-0">
+  1236→      <CardHeader className="pb-2">
+  1237→        <CardTitle className="text-base">Recent Activity</CardTitle>
+  1238→        <CardDescription>Latest emails across all sections</CardDescription>
+  1239→      </CardHeader>
+  1240→      <CardContent>
+  1241→        <div className="max-h-96 overflow-y-auto pr-1">
+  1242→          {loading || !data ? (
+  1243→            <div className="space-y-2">
+  1244→              {Array.from({ length: 5 }).map((_, i) => (
+  1245→                <div
+  1246→                  key={i}
+  1247→                  className="flex items-start gap-2.5 rounded-lg border border-border/60 p-2.5"
+  1248→                >
+  1249→                  <Skeleton className="h-8 w-8 rounded-full" />
+  1250→                  <div className="flex-1 space-y-1.5">
+  1251→                    <Skeleton className="h-3.5 w-3/4" />
+  1252→                    <Skeleton className="h-3 w-1/2" />
+  1253→                  </div>
+  1254→                  <Skeleton className="h-3 w-8" />
+  1255→                </div>
+  1256→              ))}
+  1257→            </div>
+  1258→          ) : data.recentActivity.length === 0 ? (
+  1259→            <EmptyRow icon={Inbox} label="No recent emails" />
+  1260→          ) : (
+  1261→            <ul className="space-y-1">
+  1262→              {data.recentActivity.map((a) => {
+  1263→                const color = a.categoryColor ?? 'slate'
+  1264→                return (
+  1265→                  <li key={a.id}>
+  1266→                    <button
+  1267→                      type="button"
+  1268→                      onClick={() => navigate('inbox', { contextEmailId: a.id })}
+  1269→                      className="group flex w-full items-start gap-2.5 rounded-lg p-2 text-left transition-colors hover:bg-accent/50"
+  1270→                    >
+  1271→                      <div
+  1272→                        className={cn(
+  1273→                          'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold cat-bg-soft cat-text',
+  1274→                          colorClass(color),
+  1275→                        )}
+  1276→                      >
+  1277→                        {getInitial(null, a.fromEmail)}
+  1278→                      </div>
+  1279→                      <div className="min-w-0 flex-1">
+  1280→                        <div className="truncate text-sm font-medium text-foreground">
+  1281→                          {a.subject ?? '(no subject)'}
+  1282→                        </div>
+  1283→                        <div className="truncate text-xs text-muted-foreground">
+  1284→                          {a.fromEmail}
+  1285→                        </div>
+  1286→                        {a.categoryName && (
+  1287→                          <span
+  1288→                            className={cn(
+  1289→                              'mt-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0 text-[10px] font-medium cat-text cat-bg-soft',
+  1290→                              colorClass(color),
+  1291→                            )}
+  1292→                          >
+  1293→                            {a.categoryName}
+  1294→                          </span>
+  1295→                        )}
+  1296→                      </div>
+  1297→                      <span className="shrink-0 text-[11px] text-muted-foreground">
+  1298→                        {a.receivedAt ? formatRelative(a.receivedAt) : ''}
+  1299→                      </span>
+  1300→                    </button>
+  1301→                  </li>
+  1302→                )
+  1303→              })}
+  1304→            </ul>
+  1305→          )}
+  1306→        </div>
+  1307→      </CardContent>
+  1308→    </Card>
+  1309→  )
+  1310→}
+  1311→
+  1312→// -----------------------------------------------------------------------------
+  1313→// Action items — cosmetic checklist
+  1314→// -----------------------------------------------------------------------------
+  1315→
+  1316→function ActionItemsCard({ data }: { data: DashboardData }) {
+  1317→  const items = data.actionItems
+  1318→  const [checked, setChecked] = useState<Record<string, boolean>>({})
+  1319→  return (
+  1320→    <Card className="gap-0">
+  1321→      <CardHeader className="pb-3">
+  1322→        <CardTitle className="flex items-center gap-2 text-base">
+  1323→          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary">
+  1324→            <CheckCircle2 className="h-4 w-4" />
+  1325→          </span>
+  1326→          Action Items
+  1327→        </CardTitle>
+  1328→        <CardDescription>
+  1329→          {items.filter((i) => !checked[i.id]).length} of {items.length} remaining
+  1330→        </CardDescription>
+  1331→      </CardHeader>
+  1332→      <CardContent>
+  1333→        <ul className="space-y-2">
+  1334→          {items.map((it) => {
+  1335→            const isDone = checked[it.id] ?? false
+  1336→            const days = daysUntil(it.dueAt)
+  1337→            const overdue = days !== null && days < 0
+  1338→            return (
+  1339→              <li
+  1340→                key={it.id}
+  1341→                className={cn(
+  1342→                  'flex items-center gap-3 rounded-lg border border-border/60 px-3 py-2.5 transition-colors',
+  1343→                  isDone && 'opacity-60',
+  1344→                )}
+  1345→              >
+  1346→                <Checkbox
+  1347→                  checked={isDone}
+  1348→                  onCheckedChange={(v) => setChecked((s) => ({ ...s, [it.id]: !!v }))}
+  1349→                  aria-label={`Mark "${it.title}" as done`}
+  1350→                />
+  1351→                <div className="min-w-0 flex-1">
+  1352→                  <div
+  1353→                    className={cn(
+  1354→                      'truncate text-sm font-medium text-foreground',
+  1355→                      isDone && 'line-through',
+  1356→                    )}
+  1357→                  >
+  1358→                    {it.title}
+  1359→                  </div>
+  1360→                  {it.dueAt && (
+  1361→                    <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+  1362→                      <Clock className="h-3 w-3" />
+  1363→                      <span>{formatDate(it.dueAt)}</span>
+  1364→                    </div>
+  1365→                  )}
+  1366→                </div>
+  1367→                {it.dueAt && !isDone && (
+  1368→                  <Badge
+  1369→                    variant="outline"
+  1370→                    className={cn(
+  1371→                      'shrink-0',
+  1372→                      overdue
+  1373→                        ? toneBadgeClass('destructive')
+  1374→                        : days !== null && days <= 2
+  1375→                          ? toneBadgeClass('warning')
+  1376→                          : toneBadgeClass('default'),
+  1377→                    )}
+  1378→                  >
+  1379→                    {overdue ? `${Math.abs(days!)}d overdue` : days === 0 ? 'today' : `${days}d`}
+  1380→                  </Badge>
+  1381→                )}
+  1382→                {isDone ? (
+  1383→                  <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
+  1384→                ) : (
+  1385→                  <Circle className="h-4 w-4 shrink-0 text-muted-foreground/50" />
+  1386→                )}
+  1387→              </li>
+  1388→            )
+  1389→          })}
+  1390→        </ul>
+  1391→      </CardContent>
+  1392→    </Card>
+  1393→  )
+  1394→}
+  1395→
+  1396→// -----------------------------------------------------------------------------
+  1397→// Shared bits
+  1398→// -----------------------------------------------------------------------------
+  1399→
+  1400→function EmptyRow({ icon: Icon, label }: { icon: LucideIcon; label: string }) {
+  1401→  return (
+  1402→    <div className="flex h-32 flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
+  1403→      <Icon className="h-5 w-5 opacity-70" />
+  1404→      <span>{label}</span>
+  1405→    </div>
+  1406→  )
+  1407→}
+  1408→

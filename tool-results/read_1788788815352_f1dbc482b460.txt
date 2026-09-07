@@ -1,0 +1,975 @@
+     1→'use client'
+     2→
+     3→import { useEffect, useMemo, useState } from 'react'
+     4→import {
+     5→  useEmail,
+     6→  useMarkRead,
+     7→  useStarEmail,
+     8→  useMarkImportant,
+     9→  useSnoozeEmail,
+    10→  useThread,
+    11→  useClassificationResults,
+    12→  useCategories,
+    13→  useSmartReplies,
+    14→} from '@/hooks/use-queries'
+    15→import { SnoozeDialog } from './snooze-dialog'
+    16→import { isActivelySnoozed } from './snoozed-indicator'
+    17→import { SmartRepliesPanel } from './smart-replies-panel'
+    18→import {
+    19→  EmailHeaderSkeleton,
+    20→  EmailBodySkeleton,
+    21→  AttachmentSkeleton,
+    22→} from '@/components/common/skeletons'
+    23→import { ErrorState } from '@/components/common/states'
+    24→import { colorClass } from '@/lib/category-meta'
+    25→import { CategoryIcon } from '@/components/common/category-icon'
+    26→import { cn } from '@/lib/utils'
+    27→import { formatDateTime, formatBytes, formatRelative } from '@/lib/format'
+    28→import { Button } from '@/components/ui/button'
+    29→import { Badge } from '@/components/ui/badge'
+    30→import { ScrollArea } from '@/components/ui/scroll-area'
+    31→import { Separator } from '@/components/ui/separator'
+    32→import { SleekSeparator } from '@/components/common/separator'
+    33→import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
+    34→import {
+    35→  Dialog,
+    36→  DialogContent,
+    37→  DialogHeader,
+    38→  DialogTitle,
+    39→  DialogDescription,
+    40→} from '@/components/ui/dialog'
+    41→import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
+    42→import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible'
+    43→import type { LucideIcon } from 'lucide-react'
+    44→import {
+    45→  Star,
+    46→  Mail,
+    47→  MailOpen,
+    48→  Archive,
+    49→  Reply,
+    50→  ReplyAll,
+    51→  Forward,
+    52→  ExternalLink,
+    53→  Sparkles,
+    54→  Paperclip,
+    55→  Link as LinkIcon,
+    56→  ChevronRight,
+    57→  ArrowLeft,
+    58→  ShieldCheck,
+    59→  Clock,
+    60→  Download,
+    61→  Eye,
+    62→  FileText,
+    63→  FileSpreadsheet,
+    64→  FileImage,
+    65→  FileType,
+    66→  File,
+    67→  ChevronDown,
+    68→  CalendarPlus,
+    69→  FolderInput,
+    70→  Keyboard,
+    71→  AtSign,
+    72→  ArrowUpDown,
+    73→  Wand2,
+    74→} from 'lucide-react'
+    75→import { useUIStore } from '@/store/ui-store'
+    76→import { toast } from 'sonner'
+    77→import type { EmailAttachmentMeta } from '@/lib/types'
+    78→
+    79→// ---------------------------------------------------------------------------
+    80→// Exported component — signature preserved for inbox-view / search-view /
+    81→// organized/category-detail. Two new optional props added (default no-op).
+    82→// ---------------------------------------------------------------------------
+    83→export function EmailDetail({
+    84→  emailId,
+    85→  onBack,
+    86→  onSelectThreadEmail,
+    87→  onNavigate,
+    88→}: {
+    89→  emailId: string | null
+    90→  onBack?: () => void
+    91→  onSelectThreadEmail?: (id: string) => void
+    92→  onNavigate?: (direction: 'prev' | 'next') => void
+    93→}) {
+    94→  const { data: email, isLoading, error, refetch } = useEmail(emailId)
+    95→
+    96→  if (!emailId) {
+    97→    return (
+    98→      <div className="flex h-full items-center justify-center p-10">
+    99→        <div className="text-center">
+   100→          <Mail className="mx-auto h-10 w-10 text-muted-foreground/40" />
+   101→          <p className="mt-3 text-sm font-medium">Select an email to read</p>
+   102→          <p className="mt-1 text-xs text-muted-foreground">
+   103→            Your messages appear here with full context.
+   104→          </p>
+   105→        </div>
+   106→      </div>
+   107→    )
+   108→  }
+   109→
+   110→  if (isLoading) {
+   111→    return (
+   112→      <div className="space-y-3">
+   113→        <EmailHeaderSkeleton />
+   114→        <SleekSeparator />
+   115→        <EmailBodySkeleton />
+   116→      </div>
+   117→    )
+   118→  }
+   119→  if (error) {
+   120→    return (
+   121→      <ErrorState
+   122→        title="Couldn't load email"
+   123→        description={error.message}
+   124→        onRetry={() => refetch()}
+   125→      />
+   126→    )
+   127→  }
+   128→  if (!email) return <ErrorState title="Email not found" />
+   129→
+   130→  return (
+   131→    <EmailDetailContent
+   132→      emailId={emailId}
+   133→      onBack={onBack}
+   134→      onSelectThreadEmail={onSelectThreadEmail}
+   135→      onNavigate={onNavigate}
+   136→    />
+   137→  )
+   138→}
+   139→
+   140→// ---------------------------------------------------------------------------
+   141→// Content — owns the live email query + all interactive state.
+   142→// ---------------------------------------------------------------------------
+   143→function EmailDetailContent({
+   144→  emailId,
+   145→  onBack,
+   146→  onSelectThreadEmail,
+   147→  onNavigate,
+   148→}: {
+   149→  emailId: string
+   150→  onBack?: () => void
+   151→  onSelectThreadEmail?: (id: string) => void
+   152→  onNavigate?: (direction: 'prev' | 'next') => void
+   153→}) {
+   154→  const { data: email } = useEmail(emailId)
+   155→  const { data: thread } = useThread(email?.threadId ?? null)
+   156→  const { data: classification } = useClassificationResults(emailId)
+   157→  const { data: categories } = useCategories()
+   158→
+   159→  const markRead = useMarkRead()
+   160→  const star = useStarEmail()
+   161→  const important = useMarkImportant()
+   162→  const unsnooze = useSnoozeEmail()
+   163→  const navigate = useUIStore((s) => s.navigate)
+   164→  const setComposeOpen = useUIStore((s) => s.setComposeOpen)
+   165→  const smartReplies = useSmartReplies()
+   166→
+   167→  const [threadOpen, setThreadOpen] = useState(true)
+   168→  const [previewAttachment, setPreviewAttachment] = useState<EmailAttachmentMeta | null>(null)
+   169→  const [snoozeOpen, setSnoozeOpen] = useState(false)
+   170→  const [smartRepliesOpen, setSmartRepliesOpen] = useState(false)
+   171→
+   172→  // Reset the smart-replies panel when navigating to a different email so the
+   173→  // user explicitly opts in per email (and stale results from the previous
+   174→  // email are never shown). Uses the during-render state-adjustment pattern
+   175→  // (same as `fromAccountId` in ComposeForm) rather than an effect, per the
+   176→  // `react-hooks/set-state-in-effect` lint rule.
+   177→  // https://react.dev/reference/react/useState#storing-information-from-previous-renders
+   178→  const [prevEmailId, setPrevEmailId] = useState(emailId)
+   179→  if (emailId !== prevEmailId) {
+   180→    setPrevEmailId(emailId)
+   181→    setSmartRepliesOpen(false)
+   182→  }
+   183→
+   184→  // Keyboard shortcuts: j/k navigate prev/next (if wired), ? shows the help toast.
+   185→  // Guarded against input/textarea/contenteditable so it never hijacks typing.
+   186→  useEffect(() => {
+   187→    function handler(e: KeyboardEvent) {
+   188→      const t = e.target as HTMLElement | null
+   189→      const tag = t?.tagName
+   190→      if (tag === 'INPUT' || tag === 'TEXTAREA' || t?.isContentEditable) return
+   191→      if (e.metaKey || e.ctrlKey || e.altKey) return
+   192→      if (e.key === 'j') {
+   193→        onNavigate?.('next')
+   194→      } else if (e.key === 'k') {
+   195→        onNavigate?.('prev')
+   196→      } else if (e.key === '?') {
+   197→        toast.info('Keyboard shortcuts', {
+   198→          description: 'j / k — next / previous email · s — star · e — archive · r — reply',
+   199→        })
+   200→      }
+   201→    }
+   202→    window.addEventListener('keydown', handler)
+   203→    return () => window.removeEventListener('keydown', handler)
+   204→  }, [onNavigate])
+   205→
+   206→  const wordCount = useMemo(() => {
+   207→    const text = email?.bodyText ?? email?.bodyHtmlSanitized?.replace(/<[^>]+>/g, ' ') ?? ''
+   208→    return text.trim().split(/\s+/).filter(Boolean).length
+   209→  }, [email?.bodyText, email?.bodyHtmlSanitized])
+   210→
+   211→  if (!email) return null
+   212→
+   213→  const cat = email.categories[0]
+   214→  const catColorClass = cat ? colorClass(cat.color) : 'cat-slate'
+   215→
+   216→  const domain = email.fromEmail.split('@')[1]?.toLowerCase() ?? ''
+   217→  const isInstitutional = domain === 'iitjammu.ac.in'
+   218→
+   219→  const others = (thread?.emails ?? []).filter((m) => m.id !== email.id)
+   220→
+   221→  const handleGmailOpen = () => {
+   222→    window.open(email.gmailUrl, '_blank', 'noopener,noreferrer')
+   223→  }
+   224→  const handleArchive = () => toast.info('Archive is cosmetic in this build', {
+   225→    description: 'Connected to Gmail, this would remove from the inbox view.',
+   226→  })
+   227→  const handleReply = () => {
+   228→    setComposeOpen(true)
+   229→    toast.info('Reply prefill loaded in compose', {
+   230→      description: `Replying to ${email.fromName ?? email.fromEmail}`,
+   231→    })
+   232→  }
+   233→  const handleReplyAll = () => {
+   234→    setComposeOpen(true)
+   235→    toast.info('Reply-all prefill loaded in compose')
+   236→  }
+   237→  const handleForward = () => {
+   238→    setComposeOpen(true)
+   239→    toast.info('Forward prefill loaded in compose')
+   240→  }
+   241→  const handleAskAI = () => navigate('assistant', { contextEmailId: email.id })
+   242→  // Open the Smart Replies panel and immediately kick off generation. If a
+   243→  // request is already in-flight (e.g. the user double-clicked), we skip the
+   244→  // second trigger — the panel will reflect the pending state from the first.
+   245→  const handleSmartReplies = () => {
+   246→    setSmartRepliesOpen(true)
+   247→    if (!smartReplies.isPending) {
+   248→      smartReplies.mutate(email.id)
+   249→    }
+   250→  }
+   251→  const handleAddDeadline = () =>
+   252→    toast.info('Add to deadlines', { description: 'Deadline extraction is cosmetic in this build.' })
+   253→  const handleCreateRule = () => {
+   254→    navigate('rules')
+   255→    toast.info('Create rule from sender', {
+   256→      description: `Prefilled for ${email.fromEmail}`,
+   257→    })
+   258→  }
+   259→  const handleMoveToSection = (name: string) =>
+   260→    toast.info('Move to section', { description: `Moving to "${name}" is cosmetic in this build.` })
+   261→
+   262→  return (
+   263→    <div className="flex h-full flex-col">
+   264→      {/* ===== Action toolbar (pinned at top of detail pane; wraps on mobile) ===== */}
+   265→      <div className="shrink-0 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+   266→        <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-1 px-3 py-2">
+   267→          {onBack && (
+   268→            <Button variant="ghost" size="sm" onClick={onBack} className="shrink-0">
+   269→              <ArrowLeft className="h-4 w-4" />
+   270→              <span className="hidden sm:inline">Back</span>
+   271→            </Button>
+   272→          )}
+   273→          {onBack && <Separator orientation="vertical" className="mx-1 h-6" />}
+   274→
+   275→          {/* Group 1: status toggles */}
+   276→          <ToolbarButton
+   277→            icon={Star}
+   278→            label="Star"
+   279→            onClick={() => star.mutate({ id: email.id, starred: !email.flags.isStarred })}
+   280→            active={email.flags.isStarred}
+   281→            activeClass="text-warning"
+   282→          />
+   283→          <ToolbarButton
+   284→            icon={MailOpen}
+   285→            label={email.flags.isRead ? 'Mark unread' : 'Mark read'}
+   286→            onClick={() => markRead.mutate({ id: email.id, read: !email.flags.isRead })}
+   287→            alternateIcon={email.flags.isRead ? Mail : MailOpen}
+   288→          />
+   289→          <ToolbarButton
+   290→            icon={ShieldCheck}
+   291→            label={email.flags.isImportant ? 'Remove importance' : 'Mark important'}
+   292→            onClick={() => important.mutate({ id: email.id, important: !email.flags.isImportant })}
+   293→            active={email.flags.isImportant}
+   294→            activeClass="text-warning"
+   295→          />
+   296→
+   297→          <Separator orientation="vertical" className="mx-1 h-6 hidden sm:block" />
+   298→
+   299→          {/* Group 2: actions */}
+   300→          <ToolbarButton icon={Archive} label="Archive" onClick={handleArchive} />
+   301→          <ToolbarButton
+   302→            icon={Clock}
+   303→            label={isActivelySnoozed(email.snoozedUntil) ? 'Reschedule snooze' : 'Snooze'}
+   304→            onClick={() => setSnoozeOpen(true)}
+   305→            active={isActivelySnoozed(email.snoozedUntil)}
+   306→            activeClass="text-accent-foreground bg-accent"
+   307→          />
+   308→          <ToolbarButton icon={Reply} label="Reply" onClick={handleReply} />
+   309→          <ToolbarButton icon={ReplyAll} label="Reply all" onClick={handleReplyAll} />
+   310→          <ToolbarButton icon={Forward} label="Forward" onClick={handleForward} />
+   311→          <ToolbarButton
+   312→            icon={Wand2}
+   313→            label="Smart replies"
+   314→            onClick={handleSmartReplies}
+   315→            active={smartRepliesOpen}
+   316→            activeClass="text-primary bg-primary/10"
+   317→          />
+   318→
+   319→          <Separator orientation="vertical" className="mx-1 h-6 hidden sm:block" />
+   320→
+   321→          {/* Group 3: external / AI */}
+   322→          <ToolbarButton icon={ExternalLink} label="Open in Gmail" onClick={handleGmailOpen} />
+   323→          <ToolbarButton
+   324→            icon={Sparkles}
+   325→            label="Ask AI"
+   326→            onClick={handleAskAI}
+   327→            activeClass="text-primary"
+   328→          />
+   329→
+   330→          {onNavigate && (
+   331→            <div className="ml-auto hidden items-center gap-1 md:flex">
+   332→              <ToolbarButton icon={ChevronRight} label="Previous" onClick={() => onNavigate('prev')} rotate />
+   333→              <ToolbarButton icon={ChevronRight} label="Next" onClick={() => onNavigate('next')} />
+   334→            </div>
+   335→          )}
+   336→        </div>
+   337→      </div>
+   338→
+   339→      {/* ===== Scrollable reading column ===== */}
+   340→      <ScrollArea className="min-h-0 flex-1">
+   341→        <div className="mx-auto w-full max-w-3xl px-4 py-5 pb-20 md:px-6 md:py-6 md:pb-6">
+   342→          {/* Snooze banner — only when actively snoozed */}
+   343→          {isActivelySnoozed(email.snoozedUntil) && (
+   344→            <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-accent bg-accent/40 px-3 py-2 text-xs">
+   345→              <Clock className="h-3.5 w-3.5 text-accent-foreground" />
+   346→              <span className="font-medium text-accent-foreground">Snoozed until {formatDateTime(email.snoozedUntil ?? null)}</span>
+   347→              <span className="text-muted-foreground">
+   348→                It&apos;s hidden from your default inbox until then.
+   349→              </span>
+   350→              <div className="ml-auto flex items-center gap-1">
+   351→                <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setSnoozeOpen(true)}>
+   352→                  Reschedule
+   353→                </Button>
+   354→                <Button
+   355→                  variant="ghost"
+   356→                  size="sm"
+   357→                  className="h-7 px-2 text-xs"
+   358→                  onClick={() => unsnooze.mutate({ id: email.id, until: null })}
+   359→                  disabled={unsnooze.isPending}
+   360→                >
+   361→                  Unsnooze
+   362→                </Button>
+   363→              </div>
+   364→            </div>
+   365→          )}
+   366→
+   367→          {/* Subject + category */}
+   368→          <div className="mb-3">
+   369→            <h1 className="text-lg font-semibold leading-tight tracking-tight md:text-xl">
+   370→              {email.subject ?? '(no subject)'}
+   371→            </h1>
+   372→            {cat && (
+   373→              <button
+   374→                onClick={() => navigate('organized', { contextCategoryId: cat.id })}
+   375→                className={cn(
+   376→                  'mt-2 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium cat-bg-soft cat-text cat-border-soft transition-opacity hover:opacity-80',
+   377→                  catColorClass,
+   378→                )}
+   379→              >
+   380→                <CategoryIcon icon={cat.icon} color={cat.color} className="h-3.5 w-3.5" />
+   381→                {cat.name}
+   382→                <span className="text-[10px] opacity-70">· {cat.source.replace(/_/g, ' ')}</span>
+   383→              </button>
+   384→            )}
+   385→          </div>
+   386→
+   387→          {/* Polished sender card */}
+   388→          <div className="mb-4 rounded-xl border bg-card p-4">
+   389→            <div className="flex items-start gap-3">
+   390→              <div
+   391→                className={cn(
+   392→                  'flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-base font-semibold ring-1 ring-inset cat-bg-soft cat-text cat-border-soft',
+   393→                  catColorClass,
+   394→                )}
+   395→                aria-hidden
+   396→              >
+   397→                {(email.fromName ?? email.fromEmail).charAt(0).toUpperCase()}
+   398→              </div>
+   399→              <div className="min-w-0 flex-1">
+   400→                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+   401→                  <p className="text-sm font-semibold leading-tight">
+   402→                    {email.fromName ?? email.fromEmail}
+   403→                  </p>
+   404→                  <p className="truncate text-xs text-muted-foreground">&lt;{email.fromEmail}&gt;</p>
+   405→                  {isInstitutional && (
+   406→                    <Badge
+   407→                      variant="outline"
+   408→                      className="shrink-0 gap-1 border-success/30 bg-success/10 px-1.5 py-0 text-[10px] font-medium text-success"
+   409→                    >
+   410→                      <ShieldCheck className="h-3 w-3" />
+   411→                      Verified · {domain}
+   412→                    </Badge>
+   413→                  )}
+   414→                </div>
+   415→                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+   416→                  <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+   417→                    <AtSign className="h-3 w-3" /> to
+   418→                  </span>
+   419→                  {email.toRecipients.slice(0, 3).map((r, i) => (
+   420→                    <Badge
+   421→                      key={`${r.email}-${i}`}
+   422→                      variant="outline"
+   423→                      className="max-w-[14rem] truncate px-1.5 py-0 text-[11px] font-normal text-muted-foreground"
+   424→                    >
+   425→                      <span className="truncate">{r.name ?? r.email}</span>
+   426→                    </Badge>
+   427→                  ))}
+   428→                  {email.toRecipients.length > 3 && (
+   429→                    <Badge variant="outline" className="px-1.5 py-0 text-[11px] text-muted-foreground">
+   430→                      +{email.toRecipients.length - 3}
+   431→                    </Badge>
+   432→                  )}
+   433→                </div>
+   434→                <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+   435→                  <span className="font-medium text-foreground/80">
+   436→                    {formatRelative(email.receivedAt)}
+   437→                  </span>
+   438→                  <span aria-hidden>·</span>
+   439→                  <span>{formatDateTime(email.receivedAt)}</span>
+   440→                </div>
+   441→              </div>
+   442→            </div>
+   443→          </div>
+   444→
+   445→          <SleekSeparator className="mb-5" />
+   446→
+   447→          {/* Thread context panel */}
+   448→          {email.threadId && others.length > 0 && (
+   449→            <Collapsible
+   450→              open={threadOpen}
+   451→              onOpenChange={setThreadOpen}
+   452→              className="mb-5 overflow-hidden rounded-lg border bg-muted/30"
+   453→            >
+   454→              <CollapsibleTrigger asChild>
+   455→                <button className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium hover:bg-accent/50">
+   456→                  <ChevronDown
+   457→                    className={cn(
+   458→                      'h-3.5 w-3.5 transition-transform',
+   459→                      threadOpen ? 'rotate-180' : 'rotate-0',
+   460→                    )}
+   461→                  />
+   462→                  In this thread ({thread?.messageCount ?? others.length + 1})
+   463→                  <span className="ml-auto text-[11px] font-normal text-muted-foreground">
+   464→                    {others.length} other message{others.length === 1 ? '' : 's'}
+   465→                  </span>
+   466→                </button>
+   467→              </CollapsibleTrigger>
+   468→              <CollapsibleContent>
+   469→                <ul className="divide-y border-t">
+   470→                  {others.map((m) => {
+   471→                    const mcat = m.categories[0]
+   472→                    return (
+   473→                      <li key={m.id}>
+   474→                        <button
+   475→                          onClick={() => onSelectThreadEmail?.(m.id)}
+   476→                          className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-accent/40"
+   477→                        >
+   478→                          <div
+   479→                            className={cn(
+   480→                              'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold cat-bg-soft cat-text',
+   481→                              mcat ? colorClass(mcat.color) : 'cat-slate',
+   482→                            )}
+   483→                          >
+   484→                            {(m.fromName ?? m.fromEmail).charAt(0).toUpperCase()}
+   485→                          </div>
+   486→                          <div className="min-w-0 flex-1">
+   487→                            <p className="truncate text-xs font-medium">
+   488→                              {m.subject ?? '(no subject)'}
+   489→                            </p>
+   490→                            <p className="truncate text-[11px] text-muted-foreground">
+   491→                              {m.fromName ?? m.fromEmail}
+   492→                            </p>
+   493→                          </div>
+   494→                          <span className="shrink-0 text-[11px] text-muted-foreground">
+   495→                            {formatRelative(m.receivedAt)}
+   496→                          </span>
+   497→                        </button>
+   498→                      </li>
+   499→                    )
+   500→                  })}
+   501→                </ul>
+   502→              </CollapsibleContent>
+   503→            </Collapsible>
+   504→          )}
+   505→
+   506→          {/* Body */}
+   507→          <div className="mb-6">
+   508→            <div className="mb-2 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+   509→              <Clock className="h-3 w-3" />
+   510→              <span>
+   511→                {Math.max(1, Math.round(wordCount / 200))} min read · {wordCount.toLocaleString()} words
+   512→              </span>
+   513→            </div>
+   514→            <div className="mx-auto max-w-2xl overflow-x-auto">
+   515→              {email.bodyHtmlSanitized ? (
+   516→                <div
+   517→                  className={cn(
+   518→                    'min-w-0 text-[15px] leading-7 text-foreground/90',
+   519→                    '[&_p]:my-3 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0',
+   520→                    '[&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:opacity-80',
+   521→                    '[&_strong]:font-semibold [&_em]:italic',
+   522→                    '[&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-5',
+   523→                    '[&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-5',
+   524→                    '[&_li]:my-1',
+   525→                    '[&_blockquote]:my-4 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:text-muted-foreground',
+   526→                    '[&_h1]:mt-4 [&_h1]:mb-2 [&_h1]:text-lg [&_h1]:font-semibold',
+   527→                    '[&_h2]:mt-4 [&_h2]:mb-2 [&_h2]:text-base [&_h2]:font-semibold',
+   528→                    '[&_h3]:mt-3 [&_h3]:mb-1 [&_h3]:text-sm [&_h3]:font-semibold',
+   529→                    '[&_table]:my-4 [&_table]:min-w-full [&_table]:border-collapse [&_table]:text-sm',
+   530→                    '[&_th]:border [&_th]:border-border [&_th]:bg-muted [&_th]:px-3 [&_th]:py-1.5 [&_th]:text-left [&_th]:font-medium',
+   531→                    '[&_td]:border [&_td]:border-border [&_td]:px-3 [&_td]:py-1.5',
+   532→                    '[&_img]:my-3 [&_img]:max-w-full [&_img]:rounded',
+   533→                    '[&_hr]:my-4 [&_hr]:border-border',
+   534→                    '[&_pre]:my-4 [&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:bg-muted [&_pre]:p-3 [&_pre]:text-xs',
+   535→                  )}
+   536→                  dangerouslySetInnerHTML={{ __html: email.bodyHtmlSanitized }}
+   537→                />
+   538→              ) : (
+   539→                <pre className="whitespace-pre-wrap break-words font-sans text-[15px] leading-7 text-foreground/90">
+   540→                  {email.bodyText}
+   541→                </pre>
+   542→              )}
+   543→            </div>
+   544→          </div>
+   545→
+   546→          {/* Attachments v2 */}
+   547→          {email.attachments.length > 0 && (
+   548→            <div className="mb-6">
+   549→              <h3 className="mb-2 flex items-center gap-1.5 text-sm font-medium">
+   550→                <Paperclip className="h-4 w-4" /> Attachments
+   551→                <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
+   552→                  {email.attachments.length}
+   553→                </Badge>
+   554→              </h3>
+   555→              <div className="grid gap-2 sm:grid-cols-2">
+   556→                {email.attachments.map((att) => (
+   557→                  <AttachmentCard key={att.id} att={att} onPreview={() => setPreviewAttachment(att)} />
+   558→                ))}
+   559→              </div>
+   560→            </div>
+   561→          )}
+   562→
+   563→          {/* Extracted links */}
+   564→          {email.extractedLinks.length > 0 && (
+   565→            <div className="mb-6">
+   566→              <h3 className="mb-2 flex items-center gap-1.5 text-sm font-medium">
+   567→                <LinkIcon className="h-4 w-4" /> Links
+   568→                <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
+   569→                  {email.extractedLinks.length}
+   570→                </Badge>
+   571→              </h3>
+   572→              <ul className="space-y-1.5">
+   573→                {email.extractedLinks.slice(0, 10).map((l, i) => {
+   574→                  const letter = linkLetter(l.url)
+   575→                  const host = safeHost(l.url)
+   576→                  return (
+   577→                    <li key={i}>
+   578→                      <a
+   579→                        href={l.url}
+   580→                        target="_blank"
+   581→                        rel="noopener noreferrer nofollow"
+   582→                        className="group flex items-center gap-2 rounded-md border border-transparent px-2 py-1.5 text-xs hover:border-border hover:bg-accent/40"
+   583→                      >
+   584→                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-muted text-[11px] font-semibold uppercase text-muted-foreground">
+   585→                          {letter}
+   586→                        </span>
+   587→                        <span className="min-w-0 flex-1">
+   588→                          {l.title && (
+   589→                            <span className="block truncate font-medium">{l.title}</span>
+   590→                          )}
+   591→                          <span className="block truncate text-muted-foreground">
+   592→                            {host}
+   593→                            <span className="mx-1 opacity-50">/</span>
+   594→                            <span className="truncate">{truncatePath(l.url)}</span>
+   595→                          </span>
+   596→                        </span>
+   597→                        <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+   598→                      </a>
+   599→                    </li>
+   600→                  )
+   601→                })}
+   602→              </ul>
+   603→            </div>
+   604→          )}
+   605→
+   606→          {/* Smart Replies — AI-generated reply suggestions. Toggled from the
+   607→              toolbar (Wand2 button); persists until the user closes it or
+   608→              navigates to a different email. The mutation is owned by this
+   609→              component so the toolbar click can trigger generation
+   610→              immediately while the panel renders the loading/results states. */}
+   611→          {smartRepliesOpen && (
+   612→            <div className="mb-6">
+   613→              <SmartRepliesPanel
+   614→                email={email}
+   615→                data={smartReplies.data}
+   616→                isPending={smartReplies.isPending}
+   617→                onRefresh={() => smartReplies.mutate(email.id)}
+   618→                onClose={() => setSmartRepliesOpen(false)}
+   619→              />
+   620→            </div>
+   621→          )}
+   622→
+   623→          {/* Classification footer */}
+   624→          <ClassificationFooter
+   625→            source={classification?.source ?? email.classificationSource ?? null}
+   626→            confidence={classification?.confidence ?? email.classificationConfidence ?? null}
+   627→            rationale={classification?.rationaleSummary ?? null}
+   628→            categoryName={classification?.categoryName ?? cat?.name ?? null}
+   629→          />
+   630→
+   631→          {/* Quick actions footer */}
+   632→          <div className="mt-5 flex flex-wrap gap-2">
+   633→            <Button size="sm" variant="outline" onClick={handleAddDeadline}>
+   634→              <CalendarPlus className="h-4 w-4" /> Add to deadlines
+   635→            </Button>
+   636→            <Button size="sm" variant="outline" onClick={handleCreateRule}>
+   637→              <ArrowUpDown className="h-4 w-4" /> Create rule from sender
+   638→            </Button>
+   639→            <Popover>
+   640→              <PopoverTrigger asChild>
+   641→                <Button size="sm" variant="outline">
+   642→                  <FolderInput className="h-4 w-4" /> Move to section
+   643→                </Button>
+   644→              </PopoverTrigger>
+   645→              <PopoverContent align="start" className="w-64 p-1">
+   646→                <p className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+   647→                  Choose a section
+   648→                </p>
+   649→                <div className="max-h-72 overflow-y-auto">
+   650→                  {(categories ?? []).map((c) => (
+   651→                    <button
+   652→                      key={c.id}
+   653→                      onClick={() => handleMoveToSection(c.name)}
+   654→                      className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent"
+   655→                    >
+   656→                      <CategoryIcon icon={c.icon} color={c.color} className="h-3.5 w-3.5" />
+   657→                      <span className="truncate">{c.name}</span>
+   658→                      <span className="ml-auto text-[10px] text-muted-foreground">
+   659→                        {c.totalCount}
+   660→                      </span>
+   661→                    </button>
+   662→                  ))}
+   663→                  {(categories ?? []).length === 0 && (
+   664→                    <p className="px-2 py-2 text-xs text-muted-foreground">No sections available.</p>
+   665→                  )}
+   666→                </div>
+   667→              </PopoverContent>
+   668→            </Popover>
+   669→          </div>
+   670→
+   671→          {/* Keyboard hint */}
+   672→          <p className="mt-6 flex items-center justify-center gap-1.5 text-center text-[11px] text-muted-foreground">
+   673→            <Keyboard className="h-3 w-3" />
+   674→            Press <kbd className="rounded border bg-muted px-1 py-0.5 font-mono text-[10px]">?</kbd> for shortcuts
+   675→            {onNavigate && (
+   676→              <>
+   677→                <span aria-hidden>·</span>
+   678→                <kbd className="rounded border bg-muted px-1 py-0.5 font-mono text-[10px]">j</kbd>
+   679→                <kbd className="rounded border bg-muted px-1 py-0.5 font-mono text-[10px]">k</kbd>
+   680→                to navigate
+   681→              </>
+   682→            )}
+   683→          </p>
+   684→        </div>
+   685→      </ScrollArea>
+   686→
+   687→      {/* Attachment preview dialog (cosmetic) */}
+   688→      <Dialog
+   689→        open={!!previewAttachment}
+   690→        onOpenChange={(open) => !open && setPreviewAttachment(null)}
+   691→      >
+   692→        <DialogContent>
+   693→          <DialogHeader>
+   694→            <DialogTitle className="flex items-center gap-2">
+   695→              <FileText className="h-4 w-4 text-muted-foreground" />
+   696→              <span className="truncate">{previewAttachment?.filename}</span>
+   697→            </DialogTitle>
+   698→            <DialogDescription>
+   699→              Preview is sandboxed in production. In a Gmail-connected deployment, this would render
+   700→              the attachment inline via the Drive viewer.
+   701→            </DialogDescription>
+   702→          </DialogHeader>
+   703→          <div className="rounded-lg border bg-muted/40 p-6 text-center">
+   704→            <File className="mx-auto h-10 w-10 text-muted-foreground/50" />
+   705→            <p className="mt-2 text-xs text-muted-foreground">
+   706→              {previewAttachment?.filename}
+   707→            </p>
+   708→            <p className="text-[11px] text-muted-foreground">
+   709→              {previewAttachment ? formatBytes(previewAttachment.size) : ''}
+   710→            </p>
+   711→          </div>
+   712→        </DialogContent>
+   713→      </Dialog>
+   714→
+   715→      {/* Snooze dialog (presets + custom datetime) */}
+   716→      <SnoozeDialog
+   717→        open={snoozeOpen}
+   718→        onOpenChange={setSnoozeOpen}
+   719→        emailId={email.id}
+   720→        currentSnoozedUntil={email.snoozedUntil ?? null}
+   721→      />
+   722→    </div>
+   723→  )
+   724→}
+   725→
+   726→// ---------------------------------------------------------------------------
+   727→// Toolbar button — icon + optional label (label hidden on mobile), with tooltip.
+   728→// ---------------------------------------------------------------------------
+   729→function ToolbarButton({
+   730→  icon: Icon,
+   731→  alternateIcon,
+   732→  label,
+   733→  onClick,
+   734→  active,
+   735→  activeClass,
+   736→  rotate,
+   737→}: {
+   738→  icon: LucideIcon
+   739→  alternateIcon?: LucideIcon
+   740→  label: string
+   741→  onClick: () => void
+   742→  active?: boolean
+   743→  activeClass?: string
+   744→  rotate?: boolean
+   745→}) {
+   746→  const Rendered = alternateIcon ?? Icon
+   747→  return (
+   748→    <Tooltip>
+   749→      <TooltipTrigger asChild>
+   750→        <Button
+   751→          variant="ghost"
+   752→          size="sm"
+   753→          onClick={onClick}
+   754→          className={cn('h-8 gap-1.5 px-2', active && activeClass)}
+   755→          aria-label={label}
+   756→          aria-pressed={active}
+   757→        >
+   758→          <Rendered className={cn('h-4 w-4', rotate && 'rotate-180')} />
+   759→          <span className="hidden lg:inline">{label}</span>
+   760→        </Button>
+   761→      </TooltipTrigger>
+   762→      <TooltipContent side="bottom">{label}</TooltipContent>
+   763→    </Tooltip>
+   764→  )
+   765→}
+   766→
+   767→// ---------------------------------------------------------------------------
+   768→// Attachment card v2 — colored left accent by file type, file-type icon,
+   769→// filename + size, Preview button (opens Dialog) + download icon (cosmetic).
+   770→// ---------------------------------------------------------------------------
+   771→type FileKind = 'pdf' | 'xls' | 'doc' | 'img' | 'ppt' | 'default'
+   772→
+   773→const FILE_KIND_TINT: Record<FileKind, string> = {
+   774→  pdf: 'cat-red',
+   775→  xls: 'cat-green',
+   776→  doc: 'cat-teal',
+   777→  img: 'cat-violet',
+   778→  ppt: 'cat-orange',
+   779→  default: 'cat-slate',
+   780→}
+   781→
+   782→function fileKind(mimeType: string): FileKind {
+   783→  const m = mimeType.toLowerCase()
+   784→  if (m.includes('pdf')) return 'pdf'
+   785→  if (m.includes('sheet') || m.includes('excel') || m.includes('xls') || m.includes('csv')) return 'xls'
+   786→  if (m.includes('word') || m.includes('document') || m.includes('doc')) return 'doc'
+   787→  if (m.startsWith('image/')) return 'img'
+   788→  if (m.includes('presentation') || m.includes('powerpoint') || m.includes('ppt')) return 'ppt'
+   789→  return 'default'
+   790→}
+   791→
+   792→function AttachmentCard({
+   793→  att,
+   794→  onPreview,
+   795→}: {
+   796→  att: EmailAttachmentMeta
+   797→  onPreview: () => void
+   798→}) {
+   799→  const kind = fileKind(att.mimeType)
+   800→  const tint = FILE_KIND_TINT[kind]
+   801→  const label = kind === 'default' ? 'FILE' : kind.toUpperCase()
+   802→
+   803→  return (
+   804→    <div className="relative flex items-center gap-3 overflow-hidden rounded-lg border bg-card p-2.5 pl-3">
+   805→      {/* Colored left accent by file type */}
+   806→      <span className={cn('absolute inset-y-0 left-0 w-1 cat-dot', tint)} aria-hidden />
+   807→      <FileKindIcon kind={kind} className={cn('h-9 w-9 shrink-0', 'cat-text', tint)} />
+   808→      <div className="min-w-0 flex-1">
+   809→        <p className="truncate text-xs font-medium">{att.filename}</p>
+   810→        <p className="text-[11px] text-muted-foreground">
+   811→          <span className={cn('font-semibold', 'cat-text', tint)}>{label}</span>
+   812→          {' · '}
+   813→          {formatBytes(att.size)}
+   814→        </p>
+   815→      </div>
+   816→      <div className="flex shrink-0 items-center gap-0.5">
+   817→        <Button
+   818→          variant="ghost"
+   819→          size="icon"
+   820→          className="h-7 w-7"
+   821→          onClick={onPreview}
+   822→          aria-label={`Preview ${att.filename}`}
+   823→        >
+   824→          <Eye className="h-3.5 w-3.5" />
+   825→        </Button>
+   826→        <Button
+   827→          variant="ghost"
+   828→          size="icon"
+   829→          className="h-7 w-7"
+   830→          onClick={() =>
+   831→            toast.info('Download is sandboxed', { description: att.filename })
+   832→          }
+   833→          aria-label={`Download ${att.filename}`}
+   834→        >
+   835→          <Download className="h-3.5 w-3.5" />
+   836→        </Button>
+   837→      </div>
+   838→    </div>
+   839→  )
+   840→}
+   841→
+   842→function FileKindIcon({ kind, className }: { kind: FileKind; className?: string }) {
+   843→  switch (kind) {
+   844→    case 'pdf':
+   845→      return <FileText className={className} />
+   846→    case 'xls':
+   847→      return <FileSpreadsheet className={className} />
+   848→    case 'img':
+   849→      return <FileImage className={className} />
+   850→    case 'doc':
+   851→    case 'ppt':
+   852→      return <FileType className={className} />
+   853→    default:
+   854→      return <File className={className} />
+   855→  }
+   856→}
+   857→
+   858→// ---------------------------------------------------------------------------
+   859→// Classification footer — source pill (color by source), confidence bar, rationale.
+   860→// ---------------------------------------------------------------------------
+   861→function classificationCatClass(source: string | null): string {
+   862→  switch (source) {
+   863→    case 'manual_rule':
+   864→      return 'cat-green'
+   865→    case 'user_override':
+   866→      return 'cat-amber'
+   867→    case 'sender_rule':
+   868→      return 'cat-teal'
+   869→    case 'ai':
+   870→      return 'cat-violet'
+   871→    case 'system_default':
+   872→      return 'cat-slate'
+   873→    default:
+   874→      return 'cat-slate'
+   875→  }
+   876→}
+   877→
+   878→function classificationLabel(source: string | null): string {
+   879→  switch (source) {
+   880→    case 'manual_rule':
+   881→      return 'Manual rule'
+   882→    case 'user_override':
+   883→      return 'User override'
+   884→    case 'sender_rule':
+   885→      return 'Sender rule'
+   886→    case 'ai':
+   887→      return 'AI classified'
+   888→    case 'system_default':
+   889→      return 'System default'
+   890→    default:
+   891→      return 'Unclassified'
+   892→  }
+   893→}
+   894→
+   895→function ClassificationFooter({
+   896→  source,
+   897→  confidence,
+   898→  rationale,
+   899→  categoryName,
+   900→}: {
+   901→  source: string | null
+   902→  confidence: number | null
+   903→  rationale: string | null
+   904→  categoryName: string | null
+   905→}) {
+   906→  const catClass = classificationCatClass(source)
+   907→  const pct = confidence != null ? Math.round(confidence * 100) : null
+   908→
+   909→  return (
+   910→    <div className="mt-2 rounded-lg border bg-muted/30 p-3">
+   911→      <div className="flex flex-wrap items-center gap-2">
+   912→        <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+   913→          Classification
+   914→        </span>
+   915→        <span
+   916→          className={cn(
+   917→            'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium cat-bg-soft cat-text cat-border-soft',
+   918→            catClass,
+   919→          )}
+   920→        >
+   921→          {classificationLabel(source)}
+   922→        </span>
+   923→        {categoryName && (
+   924→          <Badge variant="outline" className="px-1.5 py-0 text-[11px] text-muted-foreground">
+   925→            {categoryName}
+   926→          </Badge>
+   927→        )}
+   928→        {pct != null && (
+   929→          <div className="ml-auto flex items-center gap-2">
+   930→            <div className="h-1.5 w-24 overflow-hidden rounded-full bg-muted">
+   931→              <div
+   932→                className={cn('h-full rounded-full cat-dot', catClass)}
+   933→                style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
+   934→              />
+   935→            </div>
+   936→            <span className="w-9 text-right text-[11px] tabular-nums text-muted-foreground">
+   937→              {pct}%
+   938→            </span>
+   939→          </div>
+   940→        )}
+   941→      </div>
+   942→      {rationale && (
+   943→        <p className="mt-2 line-clamp-2 text-xs italic text-muted-foreground">{rationale}</p>
+   944→      )}
+   945→    </div>
+   946→  )
+   947→}
+   948→
+   949→// ---------------------------------------------------------------------------
+   950→// Link helpers
+   951→// ---------------------------------------------------------------------------
+   952→function linkLetter(url: string): string {
+   953→  const host = safeHost(url)
+   954→  return host ? host.charAt(0).toUpperCase() : '#'
+   955→}
+   956→
+   957→function safeHost(url: string): string {
+   958→  try {
+   959→    return new URL(url).hostname.replace(/^www\./, '')
+   960→  } catch {
+   961→    return url
+   962→  }
+   963→}
+   964→
+   965→function truncatePath(url: string): string {
+   966→  try {
+   967→    const u = new URL(url)
+   968→    const path = u.pathname.replace(/^\//, '')
+   969→    return path.length > 42 ? path.slice(0, 42) + '…' : path || '(root)'
+   970→  } catch {
+   971→    const truncated = url.length > 42 ? url.slice(0, 42) + '…' : url
+   972→    return truncated
+   973→  }
+   974→}
+   975→

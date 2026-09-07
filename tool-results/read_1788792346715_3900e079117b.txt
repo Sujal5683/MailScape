@@ -1,0 +1,566 @@
+     1→# Work Log — Institutional Email Intelligence
+     2→
+     3→This file is the cross-task work log. Each entry is appended after a `---`
+     4→separator with Task ID, Agent, Task, Work Log, and Stage Summary sections.
+     5→
+     6→---
+     7→
+     8→## Task ID: 15-FE
+     9→**Agent:** full-stack-developer
+    10→
+    11→### Task
+    12→Build the FRONTEND for the new "Conversation Intelligence" feature in the
+    13→existing Institutional Email Intelligence Next.js 16 app. The backend (API
+    14→routes) and hooks (`useEmailConversation`, `useEmailConversationDetail`,
+    15→`useEmailConversations`, `useUpdateEmailConversation`) already exist. The job
+    16→was to create four small, single-responsibility UI components and integrate
+    17→them into the existing email-detail view.
+    18→
+    19→Files to create:
+    20→1. `src/features/conversations/conversation-timeline.tsx` — interactive
+    21→   message timeline (§9, §10, §11) with dots, sender, subject, time, type
+    22→   label, expand/collapse for snippets, click-to-navigate.
+    23→2. `src/features/conversations/conversation-changes.tsx` — "What changed?"
+    24→   view (§12) of `ConversationChange[]` with earlier→latest diff + source link.
+    25→3. `src/features/conversations/conversation-status-badge.tsx` — compact
+    26→   status + follow-up badge using semantic tokens (§53).
+    27→4. `src/features/conversations/conversation-panel.tsx` — collapsible wrapper
+    28→   with Messages/Changes tabs that ties the above three together.
+    29→
+    30→File to modify:
+    31→- `src/features/inbox/email-detail.tsx` — wire `useEmailConversation(emailId)`
+    32→  and render `<ConversationPanel>` below the email body, before the
+    33→  classification footer.
+    34→
+    35→### Work Log
+    36→1. **Context gathering** — Read the contract files first:
+    37→   - `src/lib/conversations/types.ts` for `ConversationSummary`,
+    38→     `ConversationDetail`, `ConversationMessage`, `ConversationChange`,
+    39→     `ConversationStatus`, `FollowUpState`.
+    40→   - `src/hooks/use-queries.ts` to confirm the four conversation hooks and
+    41→     their signatures (returns `ConversationDetail | null` for `forEmail`).
+    42→   - `src/features/inbox/email-detail.tsx` to locate the integration point
+    43→     (between Smart Replies and ClassificationFooter) and the
+    44→     `EmailDetailContent` component that owns live email state.
+    45→   - `src/store/ui-store.ts` for the `navigate(view, { contextEmailId })`
+    46→     pattern used by the timeline + changes.
+    47→   - `src/lib/format.ts` for `formatRelative` (compact time labels).
+    48→   - `src/components/common/{category-icon,skeletons,separator}.tsx` for the
+    49→     shared component conventions.
+    50→   - `src/app/globals.css` to confirm semantic tokens (`bg-warning`,
+    51→     `text-warning`, `bg-success`, `text-success`, `bg-primary`,
+    52→     `text-primary-foreground`, `bg-accent`, `bg-destructive`,
+    53→     `text-destructive`, `bg-muted`, `text-muted-foreground`) are defined.
+    54→   - `src/features/inbox/inbox-view.tsx` to confirm `contextEmailId` is
+    55→     consumed for cross-view navigation.
+    56→
+    57→2. **Created `conversation-status-badge.tsx`** (107 lines) — A single
+    58→   `ConversationStatusBadge` component that maps every `ConversationStatus`
+    59→   to a colored `Badge` (awaiting → warning, follow_up_due → destructive,
+    60→   updated → primary, resolved → success, active/archived → muted) and
+    61→   optionally renders a follow-up state badge + importance badge. Uses
+    62→   semantic Tailwind tokens only — no hardcoded hex/rgb.
+    63→
+    64→3. **Created `conversation-message-types.ts`** (17 lines) — A small
+    65→   non-component helper module exporting `MESSAGE_TYPE_META` that maps each
+    66→   `ConversationMessage['messageType']` to `{ label, dot, text }` classes.
+    67→   Extracted to keep `conversation-timeline.tsx` under the 120-line limit
+    68→   and to make the type→tint mapping reusable.
+    69→
+    70→4. **Created `conversation-timeline.tsx`** (96 lines) — Vertical timeline
+    71→   of all messages with a colored dot per message type, sender, truncated
+    72→   subject, relative time, type label (subtle uppercase), and inline
+    73→   indicators for unread (primary dot), important (filled star), and
+    74→   attachments (paperclip). The currently-open email is highlighted with
+    75→   `bg-accent` and `aria-current`. Latest message shows its snippet by
+    76→   default; an "Expand all"/"Collapse all" toggle reveals snippets for
+    77→   every message. Clicking any row calls
+    78→   `navigate('inbox', { contextEmailId: m.emailId })`. List is capped at
+    79→   `max-h-80 overflow-y-auto` to stay compact.
+    80→
+    81→5. **Created `conversation-changes.tsx`** (83 lines) — Renders the
+    82→   "What changed?" list (§12). Each change is a card showing the field
+    83→   name, earlier value (struck through + muted), an arrow, and the latest
+    84→   value (highlighted with `bg-primary/10 text-primary`), plus a relative
+    85→   timestamp and a link to the source message (also via
+    86→   `navigate('inbox', { contextEmailId })`). Empty state shows "No
+    87→   detected changes in this conversation." inside a dashed-border card.
+    88→
+    89→6. **Created `conversation-panel.tsx`** (110 lines) — Collapsible wrapper
+    90→   with a header "Conversation — N messages · M participants" and a
+    91→   chevron toggle. When expanded: `ConversationStatusBadge` + a
+    92→   `Tabs` component with two triggers (Messages | Changes) — the Changes
+    93→   trigger shows a small primary-tinted count badge when there are
+    94→   detected changes. Messages tab → `ConversationTimeline`; Changes tab →
+    95→   `ConversationChanges`. Loading → inline `ConversationPanelSkeleton`.
+    96→   No conversation (or `messageCount <= 1`) → returns `null`.
+    97→
+    98→7. **Modified `src/features/inbox/email-detail.tsx`** — Three edits:
+    99→   - Added `useEmailConversation` to the `@/hooks/use-queries` import.
+   100→   - Added `import { ConversationPanel } from '@/features/conversations/conversation-panel'`.
+   101→   - In `EmailDetailContent`, added `const conversationQuery = useEmailConversation(emailId)`.
+   102→   - Rendered `<ConversationPanel conversation={conversationQuery.data} isLoading={conversationQuery.isLoading} currentEmailId={emailId} />` between the Smart Replies panel and the ClassificationFooter. The panel self-suppresses (returns null) while loading or for solo emails, so the integration is a no-op outside multi-message conversations.
+   103→
+   104→8. **Verification** —
+   105→   - `bun run lint` → clean (no warnings, no errors).
+   106→   - `npx tsc --noEmit` → clean for `src/` (only pre-existing errors in
+   107→     `examples/` and `skills/` folders, which are out of scope).
+   108→   - Dev server (`bun run dev`, port 3000) recompiled cleanly after every
+   109→     edit; the conversation API routes are exercised correctly when an
+   110→     email is opened (`prisma:query SELECT ... FROM Conversation`).
+   111→   - All five new/modified files are under the 120-line component limit
+   112→     (changes: 83, message-types: 17, panel: 110, status-badge: 107,
+   113→     timeline: 96).
+   114→
+   115→### Stage Summary
+   116→Conversation Intelligence frontend is COMPLETE and lint/type-clean. The
+   117→email-detail view now mounts a `ConversationPanel` below the email body
+   118→for any email that belongs to a multi-message conversation. The panel
+   119→provides three coordinated views:
+   120→- **Status**: a compact row of semantic badges (status + follow-up + importance).
+   121→- **Messages**: an interactive timeline where each message is a clickable
+   122→  single-row node (dot, sender, subject, time, type label) with the
+   123→  currently-open email highlighted and an Expand-all toggle for snippets.
+   124→- **Changes**: a "What changed?" diff list (earlier→latest) with links
+   125→  back to the source message.
+   126→
+   127→All navigation uses the existing `useUIStore.navigate('inbox', { contextEmailId })`
+   128→pattern, all colors use semantic Tailwind tokens (no hardcoded hex/rgb,
+   129→no indigo/blue utilities), all icons are statically imported from lucide-react,
+   130→and every file is small, single-responsibility, and under 120 lines.
+   131→
+   132→---
+   133→Task ID: 15
+   134→Agent: orchestrator (main) — Conversation & Follow-Up Intelligence
+   135→Task: Implement cross-application conversation intelligence layer (§1-60 of feature spec)
+   136→
+   137→Current project status assessment:
+   138→- Codebase was accidentally reset to scaffold; restored from zip (210 files, 24 models).
+   139→- Added Conversation Intelligence: a first-class domain concept that groups related emails/threads into conversations with follow-up detection, "What changed?" diffs, and status tracking.
+   140→
+   141→Work Log:
+   142→- Schema: Added 3 new models — Conversation (canonicalSubject, status, followUpState, importance, messageCount, participantSummary, latestMessageAt, aiSummary), EmailRelationship (fromEmailId, toEmailId, relationshipType, confidence, reason), ConversationOverride (user corrections). Extended Thread with conversationId field.
+   143→- Resolver engine (src/lib/conversations/resolver.ts): Deterministic conversation matching using: (1) Gmail threadId → EXACT, (2) normalized subject + participant overlap ≥0.5 → HIGH, (3) subject similarity ≥0.6 + same sender + time proximity → MEDIUM, (4) no match → create new. Includes normalizeSubject(), extractParticipants(), detectMessageType(), detectFollowUpState() (directional analysis: who sent last, time since, action keywords).
+   144→- Mappers (src/lib/conversations/mappers.ts): mapConversationSummary + mapConversationDetail with detectChanges() — extracts Deadline/Eligibility/Location/Time/Date fields from each message body and computes diffs.
+   145→- Seed data (src/lib/conversations/seed-data.ts): 7 emails forming 2 conversations — (1) Internship at ABC Corp: 4 messages across 2 threads (initial → student query → eligibility update → deadline reminder), (2) Professor project: 3 messages in 1 thread (project assignment → student question → deadline extension). Demonstrates multi-thread conversations, deadline changes, eligibility updates, follow-up states.
+   146→- Seed integration (src/lib/sync/seed.ts): Conversation resolution runs during seed ingestion + backfill. detectFollowUpState computes status per conversation.
+   147→- API routes: GET /api/conversations (list with filters), GET /api/conversations/[id] (detail with messages + changes), PATCH /api/conversations/[id] (update status/followUp/importance), GET /api/emails/[messageId]/conversation (lookup for email detail).
+   148→- Hooks: useEmailConversations, useEmailConversationDetail, useEmailConversation, useUpdateEmailConversation (renamed from useConversations to avoid collision with AI assistant conversation hooks).
+   149→- Frontend (5 new files + 1 modified): conversation-timeline.tsx (vertical timeline with message type labels, click-to-navigate, expand-all), conversation-changes.tsx ("What changed?" diff list with earlier→latest + source links), conversation-status-badge.tsx (status + followUp + importance badges), conversation-panel.tsx (collapsible card with Messages/Changes tabs, integrated in email-detail.tsx below body), conversation-message-types.ts (shared type metadata).
+   150→- Browser QA verified: opened "Internship Opportunity — ABC Corp" email → Conversation panel shows "3 messages · 2 participants · Updated" with timeline (ORIGINAL → REPLY → ...) + Changes tab showing Deadline (10 Sep → 7 Sep) and Eligibility (6.5 → 7.0) diffs.
+   151→- VLM confirmed: "Conversation section with timeline, message type labels, Messages/Changes tab toggle, clean and compact layout, well-structured and professional."
+   152→- Lint + tsc clean.
+   153→
+   154→Stage Summary (completed):
+   155→- Conversation Intelligence layer shipped: Conversation model + resolver engine + 7 seed emails forming 2 conversations + 4 API routes + 4 hooks + 5 frontend components.
+   156→- Features implemented: conversation resolution (deterministic + confidence), message timeline (§9-10), "What changed?" diff view (§12), conversation status + follow-up detection (§15-17, §49), expand/collapse (§11), conversation-level importance (§20).
+   157→- Integrated into email detail view.
+   158→- All features lint-clean, tsc-clean, browser-verified, VLM-confirmed.
+   159→
+   160→Unresolved issues / risks + next-phase recommendations:
+   161→- Inbox row indicators (§21): not yet added — email rows don't show "6-message conversation" compact indicators.
+   162→- Dashboard integration (§25): not yet added — dashboard doesn't show "Active conversations / Awaiting response / Follow-ups due" stats.
+   163→- Search integration (§23): search doesn't yet return conversations.
+   164→- Notification aggregation (§26): notifications not yet conversation-aware.
+   165→- AI assistant integration (§29): AI tools don't yet include get_conversation / get_conversation_changes.
+   166→- Compose integration (§34): "Follow up" doesn't prefill conversation context.
+   167→- User corrections (§46): "Not part of this conversation" / merge / split not yet implemented.
+   168→- Conversation list view (§38): a dedicated conversations list view is not yet built.
+   169→
+   170→---
+   171→
+   172→## Task ID: 16-FP
+   173→**Agent:** fastapi-backend
+   174→
+   175→### Task
+   176→Create a clean, modular FastAPI backend foundation in a new `backend/`
+   177→directory at the project root. The existing Next.js backend (50 API
+   178→routes) MUST continue working — this is purely additive. The FastAPI app
+   179→must be runnable independently on port 8000 and is the foundation that
+   180→subsequent tasks will build on as the 50 Next.js API routes are ported
+   181→domain-by-domain. Strict constraints: Python 3.12+, type hints everywhere,
+   182→Pydantic v2 for schemas, every file single-responsibility and under 120
+   183→lines, `async def` for all route handlers + DB operations, no business-
+   184→logic duplication (reference the Next.js implementation for behaviour), no
+   185→modification to any Next.js files.
+   186→
+   187→### Work Log
+   188→1. **Context gathering** — Read `worklog.md` (Task 15-FE context),
+   189→   `prisma/schema.prisma` (24 models: User, AccountConnection, Email,
+   190→   Thread, Conversation, Sender, Category, Rule, Notification, Deadline,
+   191→   ActionItem, AssistantConversation, AssistantMessage, AssistantAction,
+   192→   AuditEvent, etc.), `src/lib/auth.ts` (session contract to mirror),
+   193→   `src/lib/db.ts` (Prisma singleton pattern), `src/lib/sync/seed.ts` +
+   194→   `src/lib/sync/seed-data.ts` (seed account provider id
+   195→   `demo-1043287562398` — used by the FastAPI session resolver),
+   196→   `.env` (`DATABASE_URL=file:/home/z/my-project/db/custom.db`).
+   197→
+   198→2. **Package layout** — Created `backend/` with tree
+   199→   `app/{config,core/{security,logging,errors,middleware},api/routes,
+   200→   schemas,domains}`. All 12 `__init__.py` package markers are empty per
+   201→   spec; only 8 leaf modules carry logic.
+   202→
+   203→3. **`backend/pyproject.toml`** (24 lines) — `[project]` format,
+   204→   `requires-python = ">=3.12"`. Deps: `fastapi`, `uvicorn[standard]`,
+   205→   `pydantic`, `pydantic-settings` (split out of pydantic v2 — needed for
+   206→   `BaseSettings`), `prisma`, `httpx`, `python-dotenv`, `structlog`,
+   207→   `slowapi`. Build backend = hatchling, package = `app`.
+   208→
+   209→4. **`app/config/settings.py`** (82 lines) — Pydantic v2 `BaseSettings`.
+   210→   Env file lookup order: `("../.env", ".env")` so the FastAPI app
+   211→   inherits the project-root `.env` (DATABASE_URL) that Next.js uses,
+   212→   with backend-local `.env` as override. Required: `DATABASE_URL`.
+   213→   Optional in dev, enforced-required in prod via `@model_validator`:
+   214→   `GEMINI_API_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
+   215→   `NEXTAUTH_SECRET`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`. Also
+   216→   `env`, `api_v1_prefix`, `log_level`. Cached via `lru_cache`.
+   217→
+   218→5. **`app/db.py`** (54 lines) — Prisma singleton. Resolves the shared
+   219→   `prisma/schema.prisma` path relative to `__file__` (CWD-independent),
+   220→   sets `PRISMA_SCHEMA` env var. `get_client()` lazily instantiates
+   221→   `Prisma()` (no socket yet). `connect()` / `disconnect()` async
+   222→   lifecycle hooks called from the FastAPI lifespan. Module-level `db`
+   223→   handle is import-safe.
+   224→
+   225→6. **`app/core/security/auth.py`** (85 lines) — Mirrors `src/lib/auth.ts`.
+   226→   `_SEED_PROVIDER_ACCOUNT_ID = "demo-1043287562398"` matches
+   227→   `SEED_ACCOUNT.providerAccountId`. `Session` dataclass with `user_id`,
+   228→   `account_id`, `email`, `name`. `get_session()` caches the resolved
+   229→   session for the process lifetime. `_resolve_seed_account()` first
+   230→   looks up the demo seed account, then falls back to *any* account
+   231→   (works on a fresh-but-migrated DB), then raises a clear `RuntimeError`
+   232→   directing the developer to run the Next.js seed first. Documented the
+   233→   prisma-python naming convention in the module docstring.
+   234→
+   235→7. **`app/core/logging/setup.py`** (97 lines) — structlog config. JSON
+   236→   renderer in prod, `ConsoleRenderer` (colored) in dev. Custom
+   237→   `_redact_processor` recursively scrubs sensitive keys (`password`,
+   238→   `token`, `authorization`, `bodytext`, `bodyhtml`, `body`, `content`,
+   239→   `gemini_api_key`, `google_client_secret`, `nextauth_secret`,
+   240→   `vapid_private_key`, `access_token`, `refresh_token`, etc.) before
+   241→   any renderer sees them. `get_logger(name)` returns a bound logger.
+   242→
+   243→8. **`app/core/errors/types.py`** (57 lines) — Exception hierarchy.
+   244→   `AppError` base with `status_code` + `code` + `details`. Subclasses:
+   245→   `NotFound` (404 / `NOT_FOUND`), `ValidationFailed` (400 /
+   246→   `VALIDATION_ERROR`), `PermissionDenied` (403 / `PERMISSION_DENIED`),
+   247→   `RateLimited` (429 / `RATE_LIMITED`). *(Split out of `handlers.py`
+   248→   to keep both files under 120 lines and give exception classes a
+   249→   stable import path for domain code.)*
+   250→
+   251→9. **`app/core/errors/handlers.py`** (99 lines) — Standard error
+   252→   envelope `{code, message, requestId}` built by `_error_body()` which
+   253→   reads `request.state.request_id` (set by the request-id middleware).
+   254→   Four handlers: `_app_error_handler` (for `AppError` subclasses),
+   255→   `_http_exception_handler` (Starlette HTTPException → maps status to
+   256→   a code via `_HTTP_CODE_MAP`), `_validation_handler`
+   257→   (RequestValidationError → 422 with `details`), `_unhandled_handler`
+   258→   (catch-all → 500 + `log.exception`). `register_exception_handlers(app)`
+   259→   wires all four.
+   260→
+   261→10. **`app/core/middleware/request_id.py`** (44 lines) —
+   262→    `RequestIDMiddleware(BaseHTTPMiddleware)`. Honours an inbound
+   263→    `X-Request-ID` if present, else mints `uuid4().hex`. Stores on
+   264→    `request.state.request_id`, binds into structlog contextvars (so
+   265→    every log line emitted during the request includes it), echoes
+   266→    back in the `X-Request-ID` response header.
+   267→
+   268→11. **`app/api/deps.py`** (57 lines) — `get_db()` returns the Prisma
+   269→    singleton. `get_session()` delegates to
+   270→    `app.core.security.auth.get_session`. `get_account_id(session)`
+   271→    derives from the session via FastAPI `Depends` (single source of
+   272→    truth, no double resolution). `PaginationParams` dataclass +
+   273→    `pagination()` query dependency (`cursor: str | None`, `limit: int`
+   274→    1–200 default 50).
+   275→
+   276→12. **`app/api/routes/health.py`** (29 lines) — `GET /health` returns
+   277→    `{"status": "ok"}` (liveness). `GET /ready` runs `db.user.count()`
+   278→    in a try/except and returns `{"status": "ok", "db": "connected"}`
+   279→    or `{"status": "degraded", "db": "<error>"}` (readiness). Tagged
+   280→    `["health"]`.
+   281→
+   282→13. **`app/schemas/common.py`** (53 lines) — `ApiError` (standard error
+   283→    body, with `requestId` alias), `CursorPage[T]` (generic cursor-
+   284→    paginated list with `items`, `nextCursor`, `hasMore`), and
+   285→    re-exports `PaginationParams` from `app.api.deps` for schema-only
+   286→    consumers. All use `ConfigDict(populate_by_name=True)` so both
+   287→    snake_case and camelCase aliases work.
+   288→
+   289→14. **`app/main.py`** (56 lines, under the 60-line limit) —
+   290→    `create_app()` factory. Lifespan context manager calls
+   291→    `configure_logging()`, logs startup, `await connect()`, yields,
+   292→    then `await disconnect()` + logs shutdown on exit. Middleware
+   293→    order: `RequestIDMiddleware` (innermost) then `CORSMiddleware`.
+   294→    Registers exception handlers, includes the health router. Module
+   295→    exposes `app = create_app()` for `uvicorn app.main:app`.
+   296→
+   297→15. **`backend/Dockerfile`** (47 lines) — `python:3.12-slim` base.
+   298→    Installs build-essential + libssl-dev + curl. Copies
+   299→    `backend/pyproject.toml` first (cached deps layer), `pip install .`,
+   300→    then copies `backend/app` and the shared `prisma/` schema. Runs
+   301→    `prisma generate || true` (resilient — no-op until the python
+   302→    generator block is added per README). Creates non-root `appuser`
+   303→    (uid 10001), `HEALTHCHECK` against `/health`, `ENTRYPOINT` =
+   304→    `uvicorn app.main:app --host 0.0.0.0 --port 8000`. Build context =
+   305→    project root.
+   306→
+   307→16. **`backend/README.md`** (137 lines) — Setup walkthrough: venv +
+   308→    `pip install -e .`, env file lookup order, the one-time
+   309→    `generator client_py` block addition to `prisma/schema.prisma`
+   310→    (explicitly called out as non-breaking for Next.js), `prisma
+   311→    generate`, `uvicorn app.main:app --reload --port 8000`, Docker
+   312→    build from project root, layout overview, conventions (async
+   313→    everywhere, single error shape, request correlation, no secret
+   314→    logging, account scoping), migration notes.
+   315→
+   316→17. **Verification** — `python3 -m py_compile` on all non-empty `.py`
+   317→    files → **SYNTAX OK**. File line counts: every logic module under
+   318→    120 lines (largest: `app/core/errors/handlers.py` at 99, then
+   319→    `app/core/logging/setup.py` at 97, then `app/config/settings.py`
+   320→    at 82). Next.js dev server **unaffected** — `dev.log` shows
+   321→    continued 200 responses on `/api/emails/[id]` after the new
+   322→    `backend/` tree was added. **No Next.js files modified.**
+   323→    `prisma/schema.prisma` left untouched; the README documents the
+   324→    one-time, non-breaking `generator client_py` block addition.
+   325→
+   326→### Stage Summary
+   327→FastAPI backend foundation is **COMPLETE** and **syntax-verified**. The
+   328→Next.js backend is **untouched and still serving traffic** (verified via
+   329→`dev.log`). The new `backend/` tree is purely additive.
+   330→
+   331→What works today (after `pip install -e .` + `prisma generate` per the
+   332→README):
+   333→- `uvicorn app.main:app --port 8000` boots the app on port 8000.
+   334→- `GET /health` → `{"status": "ok"}` (liveness).
+   335→- `GET /ready` → probes the shared SQLite DB (readiness).
+   336→- `GET /docs` → OpenAPI spec.
+   337→- All errors return the standard `{code, message, requestId}` envelope.
+   338→- All log lines are structured (JSON in prod, colored in dev) with
+   339→  `request_id` bound and secrets redacted.
+   340→- `get_session()` / `get_account_id()` resolve the same demo seed
+   341→  account the Next.js backend uses (`demo-1043287562398`).
+   342→
+   343→What's deferred to subsequent tasks:
+   344→- Per-domain routers under `app/domains/<name>/` (the 50 Next.js API
+   345→  routes ported one-by-one).
+   346→- slowapi rate-limiter wiring (dependency installed, not yet applied).
+   347→- NextAuth/Google OAuth integration (the `auth.py` resolver currently
+   348→  returns the demo seed session, mirroring the Next.js side).
+   349→- CI/test harness (out of scope per task rules).
+   350→
+   351→**Files created**: 23 total — `pyproject.toml`, `Dockerfile`, `README.md`,
+   352→8 logic modules (`main.py`, `db.py`, `config/settings.py`,
+   353→`core/security/auth.py`, `core/logging/setup.py`, `core/errors/types.py`,
+   354→`core/errors/handlers.py`, `core/middleware/request_id.py`,
+   355→`api/deps.py`, `api/routes/health.py`, `schemas/common.py`), and 12 empty
+   356→`__init__.py` package markers. Agent work record at
+   357→`/agent-ctx/16-FP-fastapi-backend.md`.
+   358→
+   359→---
+   360→
+   361→## Task ID: 16-DOC
+   362→**Agent:** migration-docs
+   363→
+   364→### Task
+   365→Create the migration documentation and PostgreSQL schema for the existing
+   366→Institutional Email Intelligence app as its backend migrates from Next.js
+   367→App Router to FastAPI. Four deliverables:
+   368→1. `BACKEND_MIGRATION.md` — §5 of the spec: architecture map, full endpoint
+   369→   inventory (all ~50 routes), migration matrix (16 domains), iteration
+   370→   order (0–20), risks + rollback, perf baseline template.
+   371→2. `backend/sql/001_initial_schema.sql` — PostgreSQL schema mirroring the
+   372→   Prisma schema exactly (24+ tables, UUIDs, JSONB, CHECK constraints,
+   373→   indexes, FKs) runnable on Supabase.
+   374→3. `backend/sql/002_seed_data.sql` — minimal seed (demo user, account,
+   375→   10 categories, sample emails) verifying the schema works.
+   376→4. `SUPABASE_SETUP.md` — step-by-step Supabase setup + RLS policies for
+   377→   account-level isolation.
+   378→
+   379→Strict constraints: do NOT modify any existing files. APPEND one `---`
+   380→section to `worklog.md` at the end.
+   381→
+   382→### Work Log
+   383→1. **Context gathering** —
+   384→   - Read `worklog.md` end-to-end: Task 15-FE (Conversation Intelligence
+   385→     frontend), Task 15 (orchestrator summary), Task 16-FP (FastAPI
+   386→     foundation already laid in `backend/`).
+   387→   - Read `prisma/schema.prisma` (538 lines, 27 models — User,
+   388→     AccountConnection, SyncState, Thread, Sender, Category, Email,
+   389→     EmailAttachment, CategoryMembership, ClassificationResult, Rule,
+   390→     RuleVersion, UserOverride, Deadline, ActionItem, Notification,
+   391→     NotificationPreference, AssistantConversation, AssistantMessage,
+   392→     AssistantAction, AuditEvent, Draft, SavedSearch, EmailTemplate,
+   393→     Conversation, EmailRelationship, ConversationOverride).
+   394→   - Ran `find src/app/api -name route.ts | sort` → 54 route files.
+   395→   - Grepped every route file for `export (async )?function (GET|POST|PUT|PATCH|DELETE)`
+   396→     to capture the HTTP method matrix.
+   397→   - Spot-read 9 representative route files
+   398→     (`/api/route.ts`, `/api/accounts`, `/api/emails`, `/api/conversations`,
+   399→     `/api/conversations/[id]`, `/api/compose/send`, `/api/emails/bulk`,
+   400→     `/api/assistant/digest`, `/api/dashboard`) to learn auth, DB deps,
+   401→     side effects, and audit patterns.
+   402→   - Read `src/lib/auth.ts` (demo session contract) and
+   403→     `src/lib/sync/seed.ts` (seed-pipeline invariants — 10 default
+   404→     categories, deterministic demo account `demo-1043287562398`).
+   405→
+   406→2. **Created `backend/sql/001_initial_schema.sql`** (~590 lines) —
+   407→   - `CREATE EXTENSION IF NOT EXISTS pgcrypto;` for `gen_random_uuid()`.
+   408→   - 27 `CREATE TABLE` statements in FK-dependency order.
+   409→   - All PKs: `UUID PRIMARY KEY DEFAULT gen_random_uuid()`.
+   410→   - All timestamps: `TIMESTAMPTZ NOT NULL DEFAULT now()`.
+   411→   - 17 JSON-serialised Prisma `String` fields upgraded to native `JSONB`
+   412→     (toRecipients, ccRecipients, bccRecipients, labels, extractedLinks,
+   413→     expression, actions, payload, contentJson, attachments, sources,
+   414→     inputSummary, resultSummary, inversePayload, metadata, filters,
+   415→     participantSummary).
+   416→   - 20 inline `CHECK` constraints emulating every Prisma enum-string
+   417→     field (account.status, sync_state.syncStatus, sender.ruleStatus,
+   418→     email.classificationSource, category_membership.source, rule.createdBy,
+   419→     deadline.status, action_item.status, notification.importance,
+   420→     notification_preference.channel, assistant_conversation.mode,
+   421→     assistant_message.role, assistant_action.status, audit_event.sourceSurface,
+   422→     email_template.category, conversation.status/followUpState/importance,
+   423→     email_relationship.relationshipType, conversation_override.overrideType).
+   424→   - 31 indexes mirroring all 28 Prisma `@@index` directives (composites
+   425→     preserved) + 3 FK-convenience indexes on email_attachment.emailId,
+   426→     category_membership.emailId, classification_result.emailId.
+   427→   - 7 table-level UNIQUE constraints mirroring all 7 Prisma `@@unique`
+   428→     directives, plus 1 column-level UNIQUE (user.email).
+   429→   - FKs use `ON DELETE CASCADE` or `ON DELETE SET NULL` per the Prisma
+   430→     relation definitions.
+   431→   - A `set_updated_at()` PL/pgSQL trigger function plus per-table triggers
+   432→     on the 12 tables with `updatedAt`, mirroring Prisma's `@updatedAt`.
+   433→   - Initial draft used `#`-style comments (not valid SQL); fixed via
+   434→     `sed -i 's/^#/--/'` (verified 0 remaining `#`-comment lines).
+   435→
+   436→3. **Created `backend/sql/002_seed_data.sql`** (~210 lines) —
+   437→   - Wrapped in `BEGIN; … COMMIT;` for atomicity.
+   438→   - Deterministic UUIDs (`…000001` user, `…000010` account, `…0101..0110`
+   439→     categories) for reproducibility across reruns.
+   440→   - 1 demo user (Aarav Sharma / btech2023.cs@iitjammu.ac.in) + 1 Google
+   441→     account connection + 1 sync_state row — mirrors `SEED_ACCOUNT`.
+   442→   - 10 default categories (Placement, Academic, Professors, Research,
+   443→     Student Welfare, Medical, Hostel, Events, Finance, Others) with the
+   444→     same colors, icons, and sortOrders as `DEFAULT_CATEGORIES` in
+   445→     `src/lib/sync/seed.ts`.
+   446→   - 3 sample senders + 1 conversation + 1 thread + 2 sample emails
+   447→     (`msg-placement-1`, `msg-placement-2`) — the Internship Opportunity +
+   448→     Pre-Placement Talk follow-up pair.
+   449→   - 2 `category_membership` rows + 1 open `deadline` + 1 unread urgent
+   450→     `notification` derived from the seed email.
+   451→   - 1 `audit_event` row recording seed load.
+   452→   - All inserts `ON CONFLICT DO NOTHING` (idempotent). Email inserts use
+   453→     CTEs to resolve `senderId` / `threadId` by lookup so FKs work whether
+   454→     the parent was just inserted or pre-existing.
+   455→   - Verification queries (commented) document expected counts.
+   456→
+   457→4. **Created `SUPABASE_SETUP.md`** (~410 lines, 9 sections) —
+   458→   - Create project, get connection string (pooled 6543 vs direct 5432),
+   459→     run migrations (web editor + `psql -f`), env vars, smoke-test
+   460→     queries (SQL + Python `asyncpg`), RLS, backups, pitfalls, next steps.
+   461→   - Full RLS section: enable RLS on all 27 tables, `current_account_id()`
+   462→     helper function, account-scoped policy template (4 policies × 15
+   463→     tables), child-table EXISTS policies (email_attachment,
+   464→     category_membership, rule_version, assistant_message), user-scoped
+   465→     policies (user, assistant_conversation), service-role bypass docs.
+   466→   - 5-row pitfalls table.
+   467→
+   468→5. **Created `BACKEND_MIGRATION.md`** (~530 lines, 7 sections) —
+   469→   - **§1 Architecture map**: ASCII stack diagram + tech-snapshot table
+   470→     (Next.js→FastAPI, TS→Python, Prisma→SQLAlchemy, SQLite→Postgres,
+   471→     demo session→Supabase JWT) + 6 cross-cutting invariants.
+   472→   - **§2 Endpoint inventory**: 70 numbered rows (54 unique route files ×
+   473→     methods), split into 13 sub-tables by domain. Columns: path,
+   474→     method(s), purpose, auth, DB deps, side effects, risk (L/M/H).
+   475→   - **§3 Migration matrix**: 16 rows (Auth, Accounts, Emails, Threads,
+   476→     Conversations, Categories, Senders, Rules, Search, Notifications,
+   477→     Compose, Attachments, Assistant, AI Tools, Dashboard, Sync) with
+   478→     Next.js route count, FastAPI prefix, Status, Tests, Traffic,
+   479→     Verified columns. Totals: 54 routes / 16 routers.
+   480→   - **§4 Iteration plan**: 21 iterations (0–20) — infra → auth → read-
+   481→     only → emails → mutations → hard ops → categories+rules →
+   482→     conversations → search → notifications → compose → dashboard →
+   483→     AI tools → assistant (read/create → message send → action revert)
+   484→     → sync worker → shadow 100% → cutover → soak → decommission. Each
+   485→     iteration has explicit exit criteria.
+   486→   - **§5 Risks + rollback**: 10 risks (R1–R10) with likelihood/impact/
+   487→     mitigation. Rollback strategy is gateway-driven (`/api/v1/*` → FastAPI,
+   488→     `/api/*` → Next.js; rollback = one reverse-proxy reload). Mandatory
+   489→     rollback drill before iteration 18, < 60 s target. Data rollback
+   490→     via `alembic downgrade` or `pg_dump` restore.
+   491→   - **§6 Perf baseline template**: per-route P50/P95/P99/throughput/
+   492→     DB-round-trips/memory/cold-start template with 1.2× budget. SLO
+   493→     budget table per route class (read-single 80 ms, paginated 150 ms,
+   494→     aggregate 250 ms, single-row write 120 ms, bulk 400 ms, LLM 3 s,
+   495→     orchestrator 8 s). Dashboard hot-path optimisation notes.
+   496→   - **§7 Known defects**: 8 pre-existing Next.js defects the FastAPI
+   497→     port must NOT replicate (D1 the `emails/essageId]` directory typo,
+   498→     D2 in-process session caching, D3 auto-seed-on-startup, D4 delete-
+   499→     aliases-archive confusion, D5 JSON-in-TEXT, D6 no structured logging,
+   500→     D7 no rate limiting on LLM routes, D8 no OpenAPI schema).
+   501→
+   502→6. **Created `/agent-ctx/16-DOC-migration-docs.md`** — Work record for
+   503→   the next agent (context, files created, stage summary, notes
+   504→   including the `emails/essageId]` typo defect D1).
+   505→
+   506→7. **Verification** —
+   507→   - All 4 deliverable files created under correct paths.
+   508→   - SQL files: 0 `#`-comment lines remaining (sed-converted to `--`).
+   509→   - `SUPABASE_SETUP.md`: initially mangled by the same sed (markdown
+   510→     headers turned into `--`); rewrote the file fresh and verified
+   511→     headers restored.
+   512→   - Schema SQL designed for Supabase compatibility (`gen_random_uuid()`,
+   513→     `TIMESTAMPTZ`, `JSONB`, `CHECK` constraints, standard FK syntax;
+   514→     no PG-proprietary features beyond pgcrypto which Supabase
+   515→     preinstalls).
+   516→   - All 28 Prisma `@@index` directives → 28 SQL indexes (composites
+   517→     preserved) + 3 FK-convenience indexes = 31 total.
+   518→   - All 7 Prisma `@@unique` directives → 7 SQL table-level unique
+   519→     constraints + 1 column-level UNIQUE (user.email).
+   520→   - **No existing files modified** (per task constraint). The only
+   521→     existing-file change is this worklog entry (APPEND).
+   522→
+   523→### Stage Summary
+   524→Migration documentation is **COMPLETE**. Four self-consistent deliverables:
+   525→
+   526→- **`BACKEND_MIGRATION.md`** is the single source of truth for migration
+   527→  progress: 54 endpoints inventoried, 16 domains in the matrix, 21
+   528→  iterations planned, 10 risks enumerated, rollback strategy defined,
+   529→  performance baseline template ready.
+   530→- **`backend/sql/001_initial_schema.sql`** is a Supabase-ready PostgreSQL
+   531→  schema mirroring the Prisma schema exactly (27 tables, 20 CHECK
+   532→  constraints, 31 indexes, 7 table-level unique constraints + 1
+   533→  column-level unique, 1 trigger function).
+   534→  All JSON-serialised String fields upgraded to JSONB; all timestamps
+   535→  upgraded to TIMESTAMPTZ; all IDs are UUID with `gen_random_uuid()`.
+   536→- **`backend/sql/002_seed_data.sql`** verifies the schema accepts the
+   537→  demo corpus (deterministic UUIDs, idempotent inserts, FK-resolving
+   538→  CTEs, documented expected counts).
+   539→- **`SUPABASE_SETUP.md`** walks an operator from project creation
+   540→  through RLS enablement with a complete account-isolation policy set
+   541→  (4 policies × 15 account-scoped tables, EXISTS-based policies for 4
+   542→  child tables, user-scoped policies for 2 user-scoped tables) and a
+   543→  pitfalls table.
+   544→
+   545→This work complements Task 16-FP (FastAPI foundation): 16-FP created the
+   546→FastAPI skeleton that consumes this schema, and 16-DOC created the schema
+   547→+ the migration contract that 16-FP's per-domain routers (and the
+   548→remaining 16-BE iterations) will follow.
+   549→
+   550→**Key cross-references for downstream agents**:
+   551→- `BACKEND_MIGRATION.md` §4 iteration plan = the 16-BE-* task sequence.
+   552→- `BACKEND_MIGRATION.md` §7 defect D1 = the `emails/essageId]` typo to
+   553→  fix in the FastAPI URL contract.
+   554→- `backend/sql/001_initial_schema.sql` = the authoritative schema (the
+   555→  Prisma schema is the source of truth for behaviour, this SQL is the
+   556→  source of truth for the PostgreSQL physical model).
+   557→- `SUPABASE_SETUP.md` §6 = the RLS policy set the FastAPI auth layer
+   558→  must respect.
+   559→
+   560→**Files created** (4 + 1 work record):
+   561→- `/home/z/my-project/BACKEND_MIGRATION.md`
+   562→- `/home/z/my-project/backend/sql/001_initial_schema.sql`
+   563→- `/home/z/my-project/backend/sql/002_seed_data.sql`
+   564→- `/home/z/my-project/SUPABASE_SETUP.md`
+   565→- `/home/z/my-project/agent-ctx/16-DOC-migration-docs.md`
+   566→

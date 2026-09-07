@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils'
 import { colorClass } from '@/lib/category-meta'
 import { CategoryIcon } from '@/components/common/category-icon'
 import { Button } from '@/components/ui/button'
-import { ScrollArea } from '@/components/ui/scroll-area'
+import { PaneScroll } from '@/components/ui/pane-scroll'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -65,28 +65,6 @@ export function InboxView() {
 
   const { data: categories } = useCategories()
 
-  // ── No-accounts landing state ────────────────────────────────────────────────
-  // Render before any email hooks to prevent empty-account 500 errors.
-  if (!accountsLoading && Array.isArray(accounts) && accounts.length === 0) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-6 p-8 text-center">
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-          <Mail className="h-8 w-8" />
-        </div>
-        <div className="space-y-1">
-          <h2 className="text-lg font-semibold">Your inbox is empty</h2>
-          <p className="text-sm text-muted-foreground">
-            Connect a Google account to start syncing your emails.
-          </p>
-        </div>
-        <Button
-          onClick={() => import('next-auth/react').then(({ signIn }) => signIn('google'))}
-        >
-          Connect Google Account
-        </Button>
-      </div>
-    )
-  }
 
   // ---- Multi-select state ----
   // `selectMode` toggles the per-row checkboxes; `selectedIds` is the set of
@@ -266,8 +244,30 @@ export function InboxView() {
     setSelectedId(next ?? null)
   }, [deleteConfirmId, visibleIds, bulkAction])
 
+  // ── No-accounts landing state ────────────────────────────────────────────────
+  if (!accountsLoading && Array.isArray(accounts) && accounts.length === 0) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-6 p-8 text-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+          <Mail className="h-8 w-8" />
+        </div>
+        <div className="space-y-1">
+          <h2 className="text-lg font-semibold">Your inbox is empty</h2>
+          <p className="text-sm text-muted-foreground">
+            Connect a Google account to start syncing your emails.
+          </p>
+        </div>
+        <Button
+          onClick={() => import('next-auth/react').then(({ signIn }) => signIn('google'))}
+        >
+          Connect Google Account
+        </Button>
+      </div>
+    )
+  }
+
   return (
-    <div className="h-full">
+    <div className="flex h-full flex-col">
       <MasterDetailLayout
         selectedId={selectedId}
         onBack={() => setSelectedId(null)}
@@ -411,7 +411,7 @@ export function InboxView() {
         )}
 
         {/* List */}
-        <ScrollArea className="flex-1">
+        <PaneScroll>
           <div className="p-2 pb-20 md:pb-2">
             <EmailList
               selectedId={selectedId}
@@ -424,7 +424,7 @@ export function InboxView() {
               allSelected={allSelected}
             />
           </div>
-        </ScrollArea>
+        </PaneScroll>
 
         {/* Bulk-actions bar — rendered as a flex child at the bottom of the
             list column whenever ≥1 email is selected. Dismissed automatically
