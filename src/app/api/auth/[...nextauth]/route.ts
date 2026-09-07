@@ -12,7 +12,7 @@
 // The Supabase userId is threaded through the JWT/session callbacks
 // so downstream code can associate the Google account with the right user.
 
-import NextAuth from 'next-auth'
+import NextAuth from 'next-auth/next'
 import GoogleProvider from 'next-auth/providers/google'
 import { db } from '@/lib/db'
 import { supabaseAdmin } from '@/lib/supabase'
@@ -26,7 +26,6 @@ const handler = NextAuth({
         params: {
           // Request offline access (refresh_token) + full Gmail read scope.
           access_type: 'offline',
-          prompt: 'consent',
           scope: [
             'openid',
             'email',
@@ -108,7 +107,7 @@ const handler = NextAuth({
           },
           update: {
             accessToken: googleAccount.access_token ?? null,
-            refreshToken: googleAccount.refresh_token ?? null,
+            ...(googleAccount.refresh_token ? { refreshToken: googleAccount.refresh_token } : {}),
             tokenExpiresAt: tokenExpiry,
             status: 'active',
             displayName: profile?.name ?? null,
