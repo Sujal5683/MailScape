@@ -36,17 +36,17 @@ export function NaturalLanguagePanel({
   const canParse = !!input.trim() && !isParsing
 
   return (
-    <Card className="rounded-none border-x-0 border-t-0 shadow-sm">
-      <CardHeader className="pb-3">
+    <div className="bg-background">
+      <div className="pb-3 pt-4 px-4 space-y-1.5">
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-muted-foreground" />
-          <CardTitle className="text-sm">Natural language</CardTitle>
+          <div className="text-sm font-semibold leading-none">Natural language</div>
         </div>
         <p className="text-xs text-muted-foreground">
           Describe what you&apos;re looking for. We&apos;ll parse it into filters you can review before running.
         </p>
-      </CardHeader>
-      <CardContent className="space-y-3 pt-0">
+      </div>
+      <div className="space-y-3 pt-0 pb-4 px-4">
         <div className="flex flex-col gap-2 sm:flex-row">
           <Input
             placeholder='e.g. "unread emails from the registrar with PDFs this week"'
@@ -122,7 +122,7 @@ export function NaturalLanguagePanel({
             </Button>
           </>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }

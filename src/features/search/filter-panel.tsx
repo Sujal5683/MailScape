@@ -106,8 +106,8 @@ export function FilterPanel({
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
-      <Card className="rounded-none border-x-0 border-t-0 shadow-sm">
-        <CardHeader className="pb-3">
+      <div className="bg-background">
+        <div className="pb-3 pt-4 px-4">
           <CollapsibleTrigger asChild>
             <button
               type="button"
@@ -115,7 +115,7 @@ export function FilterPanel({
               aria-label={open ? 'Collapse filters' : 'Expand filters'}
             >
               <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
-              <CardTitle className="text-sm">Filters</CardTitle>
+              <div className="text-sm font-semibold leading-none">Filters</div>
               {activeCount > 0 && (
                 <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">
                   {activeCount}
@@ -129,9 +129,9 @@ export function FilterPanel({
               />
             </button>
           </CollapsibleTrigger>
-        </CardHeader>
+        </div>
         <CollapsibleContent>
-          <CardContent className="space-y-4 pt-0">
+          <div className="space-y-4 pt-0 pb-4 px-4">
             {/* Sender */}
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Sender</Label>
@@ -306,9 +306,9 @@ export function FilterPanel({
                 Clear
               </Button>
             </div>
-          </CardContent>
+          </div>
         </CollapsibleContent>
-      </Card>
+      </div>
     </Collapsible>
   )
 }

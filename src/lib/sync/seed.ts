@@ -48,6 +48,7 @@ export async function ingestEmail(
   categoryMap: Map<string, string>,
   sendersMap: Map<string, string>,
   threadsMap: Map<string, string>,
+  options?: { skipNotifications?: boolean }
 ): Promise<string> {
   const domain = raw.fromEmail.split('@')[1] ?? null
 
@@ -85,8 +86,17 @@ export async function ingestEmail(
   // Upsert thread.
   let threadId = threadsMap.get(raw.providerThreadId)
   if (!threadId) {
-    const thread = await db.thread.create({
-      data: {
+    const thread = await db.thread.upsert({
+      where: {
+        accountId_providerThreadId: {
+          accountId,
+          providerThreadId: raw.providerThreadId,
+        },
+      },
+      update: {
+        lastMessageAt: new Date(raw.receivedAt),
+      },
+      create: {
         accountId,
         providerThreadId: raw.providerThreadId,
         subject: raw.subject,
@@ -223,30 +233,32 @@ export async function ingestEmail(
   }
 
   // Notifications for unread/important emails.
-  if (!raw.isRead && raw.isImportant) {
-    await db.notification.create({
-      data: {
-        accountId,
-        emailId: email.id,
-        categoryId,
-        title: raw.subject.slice(0, 120),
-        body: snippet,
-        importance: 'important',
-        isRead: false,
-      },
-    })
-  } else if (!raw.isRead) {
-    await db.notification.create({
-      data: {
-        accountId,
-        emailId: email.id,
-        categoryId,
-        title: raw.subject.slice(0, 120),
-        body: snippet,
-        importance: 'normal',
-        isRead: false,
-      },
-    })
+  if (!options?.skipNotifications) {
+    if (!raw.isRead && raw.isImportant) {
+      await db.notification.create({
+        data: {
+          accountId,
+          emailId: email.id,
+          categoryId,
+          title: raw.subject.slice(0, 120),
+          body: snippet,
+          importance: 'important',
+          isRead: false,
+        },
+      })
+    } else if (!raw.isRead) {
+      await db.notification.create({
+        data: {
+          accountId,
+          emailId: email.id,
+          categoryId,
+          title: raw.subject.slice(0, 120),
+          body: snippet,
+          importance: 'normal',
+          isRead: false,
+        },
+      })
+    }
   }
 
   return email.id

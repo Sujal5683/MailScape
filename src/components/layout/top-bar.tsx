@@ -2,9 +2,9 @@
 
 import { useUIStore } from '@/store/ui-store'
 import { navItem } from '@/lib/nav'
-import { useNotifications, useSyncStatus } from '@/hooks/use-queries'
+import { useNotifications, useSyncStatus, useRunSync } from '@/hooks/use-queries'
 import { Button } from '@/components/ui/button'
-import { Search, Bell, Sun, Moon, Sparkles, Download, Loader2 } from 'lucide-react'
+import { Search, Bell, Sun, Moon, Sparkles, Download, Loader2, RefreshCw } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { useScanDialogStore } from '@/features/scan/scan-dialog-store'
 
@@ -17,7 +17,8 @@ export function TopBar() {
   const { theme, setTheme } = useTheme()
   const openScan = useScanDialogStore((s) => s.openDialog)
   const { data: sync } = useSyncStatus()
-  const scanning = sync?.status === 'syncing'
+  const runSyncMut = useRunSync()
+  const scanning = sync?.status === 'syncing' || runSyncMut.isPending
 
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-border bg-background/80 px-3 backdrop-blur md:px-6">
@@ -42,15 +43,14 @@ export function TopBar() {
           variant="outline"
           size="sm"
           className="h-9 gap-1.5"
-          onClick={openScan}
-          aria-label="Scan Gmail"
+          onClick={() => {
+            if (!scanning) runSyncMut.mutate()
+          }}
+          disabled={scanning}
+          aria-label="Refresh Data"
         >
-          {scanning ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Download className="h-4 w-4" />
-          )}
-          <span className="hidden sm:inline">{scanning ? 'Scanning…' : 'Scan Gmail'}</span>
+          <RefreshCw className={`h-4 w-4 ${scanning ? 'animate-spin' : ''}`} />
+          <span className="hidden sm:inline">{scanning ? 'Syncing…' : 'Refresh'}</span>
         </Button>
 
         <Button

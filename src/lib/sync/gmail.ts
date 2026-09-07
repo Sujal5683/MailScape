@@ -289,29 +289,38 @@ async function fullSync(
   const profileRes = await gmail.users.getProfile({ userId: 'me' })
   const newHistoryId = profileRes.data.historyId ?? null
 
-  // Fetch the last 100 messages from the inbox.
-  const listRes = await gmail.users.messages.list({
-    userId: 'me',
-    maxResults: 100,
-    labelIds: ['INBOX'],
-  })
+  // Fetch up to 500 messages across all folders initially
+  let pageToken: string | undefined = undefined
+  let fetchedCount = 0
+  const maxToFetch = 500
 
-  const messages = listRes.data.messages ?? []
+  do {
+    const listRes = await gmail.users.messages.list({
+      userId: 'me',
+      maxResults: Math.min(100, maxToFetch - fetchedCount),
+      pageToken,
+    })
 
-  for (const msgRef of messages) {
-    if (!msgRef.id) continue
+    const messages = listRes.data.messages ?? []
 
-    // Skip already-ingested messages.
-    const exists = await db.email.findFirst({ where: { accountId, providerMessageId: msgRef.id } })
-    if (exists) continue
+    for (const msgRef of messages) {
+      if (!msgRef.id) continue
 
-    const msgRes = await gmail.users.messages.get({ userId: 'me', id: msgRef.id, format: 'full' })
-    const raw = parseGmailMessage(msgRes.data, accountEmail)
-    if (raw) {
-      await ingestEmail(raw, accountId, categoryMap, sendersMap, threadsMap)
-      syncedCount++
+      // Skip already-ingested messages.
+      const exists = await db.email.findFirst({ where: { accountId, providerMessageId: msgRef.id } })
+      if (exists) continue
+
+      const msgRes = await gmail.users.messages.get({ userId: 'me', id: msgRef.id, format: 'full' })
+      const raw = parseGmailMessage(msgRes.data, accountEmail)
+      if (raw) {
+        await ingestEmail(raw, accountId, categoryMap, sendersMap, threadsMap, { skipNotifications: true })
+        syncedCount++
+      }
     }
-  }
+
+    fetchedCount += messages.length
+    pageToken = listRes.data.nextPageToken ?? undefined
+  } while (pageToken && fetchedCount < maxToFetch)
 
   // Persist the historyId for future incremental syncs.
   if (newHistoryId) {

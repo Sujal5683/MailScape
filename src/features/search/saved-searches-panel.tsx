@@ -100,9 +100,9 @@ export function SavedSearchesPanel({
   return (
     <>
       <Collapsible open={open} onOpenChange={setOpen}>
-        <Card className="rounded-none border-x-0 border-t-0 shadow-sm">
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
+        <div className="bg-background">
+          <div className="flex items-center gap-2 pb-3 pt-3 px-4">
+            <div className="flex w-full items-center gap-2">
               <CollapsibleTrigger asChild>
                 <button
                   type="button"
@@ -110,7 +110,7 @@ export function SavedSearchesPanel({
                   aria-label={open ? 'Collapse saved searches' : 'Expand saved searches'}
                 >
                   <Bookmark className="h-4 w-4 text-muted-foreground" />
-                  <CardTitle className="text-sm">Saved searches</CardTitle>
+                  <div className="text-sm font-semibold leading-none">Saved searches</div>
                   {list.length > 0 && (
                     <Badge variant="secondary" className="ml-0.5 h-5 px-1.5 text-[10px]">
                       {list.length}
@@ -138,12 +138,12 @@ export function SavedSearchesPanel({
                 }
               >
                 <BookmarkPlus className="h-3.5 w-3.5" />
-                Save current
+                <span className="hidden sm:inline">Save current</span>
               </Button>
             </div>
-          </CardHeader>
+          </div>
           <CollapsibleContent>
-            <CardContent className="pt-0">
+            <div className="pt-0 pb-3 px-4">
               {error ? (
                 <p className="text-xs text-destructive">
                   Failed to load saved searches.
@@ -179,9 +179,9 @@ export function SavedSearchesPanel({
                   </ul>
                 </ScrollArea>
               )}
-            </CardContent>
+            </div>
           </CollapsibleContent>
-        </Card>
+        </div>
       </Collapsible>
 
       {/* Save current search dialog */}

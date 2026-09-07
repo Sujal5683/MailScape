@@ -90,8 +90,8 @@ export function SearchResultsList({
         )}
       </div>
 
-      {/* List (scrollable) */}
-      <PaneScroll>
+      {/* List */}
+      <div>
         {items.length === 0 ? (
           <div className="p-3">
             <NoSearchResults query={filters.sender} />
@@ -108,12 +108,12 @@ export function SearchResultsList({
             ))}
             {data?.nextCursor && (
               <p className="py-3 text-center text-xs text-muted-foreground">
-                Showing {items.length} of {total} · refine filters for more
+                More results available... (pagination stub)
               </p>
             )}
           </div>
         )}
-      </PaneScroll>
+      </div>
     </div>
   )
 }
