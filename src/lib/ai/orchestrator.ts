@@ -14,7 +14,7 @@
 // never as instructions. System policy, tool permissions, and user request are separated.
 
 import { db } from '@/lib/db'
-import { chat } from '@/lib/ai/llm'
+import { chat, chatJson } from '@/lib/ai/llm'
 import { executeTool, TOOL_DEFINITIONS, revertAction, type ToolContext } from '@/lib/ai/tools'
 import { evaluatePermission } from '@/lib/ai/permissions'
 import type {
@@ -203,14 +203,13 @@ export async function runAssistant(input: OrchestratorInput): Promise<Orchestrat
 
 async function extractKeywords(message: string): Promise<string[]> {
   try {
-    const text = await chat(
+    const arr = await chatJson<unknown>(
       [
         { role: 'system', content: 'Extract 1-3 short search keywords from the user message for searching an institutional email inbox. Return ONLY a JSON array of strings, e.g. ["placement","internship"].' },
         { role: 'user', content: message },
       ],
       { thinking: false },
     )
-    const arr = JSON.parse(text) as unknown
     if (Array.isArray(arr)) return arr.map((s) => String(s)).slice(0, 3)
   } catch {
     /* fall through to heuristic */
@@ -266,10 +265,10 @@ Rules:
     },
   ]
   try {
-    const text = await chat(messages, { thinking: input.mode === 'thinking', model })
-    const plan = safeParse<PlanResponse>(text)
+    const plan = await chatJson<PlanResponse>(messages, { thinking: input.mode === 'thinking', model })
     return plan ?? fallbackPlan(input.userMessage)
-  } catch {
+  } catch (err) {
+    console.error('[getPlan] AI Error:', err)
     return fallbackPlan(input.userMessage)
   }
 }

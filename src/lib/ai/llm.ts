@@ -1,7 +1,7 @@
 // LLM wrapper using Google Gemini API (@google/genai SDK).
 // Backend-only — credentials never reach the client bundle.
 // Uses GEMINI_API_KEY from environment.
-// Features automatic fallback through the model chain when rate-limited or unavailable.
+// Automatic fallback through the model chain when rate-limited or unavailable.
 
 import { GoogleGenAI } from '@google/genai'
 import {
@@ -10,7 +10,6 @@ import {
   type GeminiModelInfo,
 } from './models'
 
-// Re-export so consumers that import from llm.ts still work.
 export { GEMINI_MODELS, DEFAULT_MODEL_ID, type GeminiModelInfo }
 
 // ---------------------------------------------------------------------------
@@ -29,9 +28,9 @@ function getClient(): GoogleGenAI {
 }
 
 // ---------------------------------------------------------------------------
-// Rate-limit / unavailable error codes that trigger fallback.
+// Rate-limit / unavailable errors that trigger model fallback
 // ---------------------------------------------------------------------------
-const FALLBACK_TRIGGERS = new Set([429, 503, 500, 503])
+
 function isFallbackError(err: unknown): boolean {
   if (err instanceof Error) {
     const msg = err.message.toLowerCase()
@@ -58,7 +57,8 @@ export interface ChatTurn {
 
 export interface ChatOptions {
   thinking?: boolean
-  model?: string   // If provided, tries this model first then falls back
+  model?: string
+  json?: boolean   // true → use responseMimeType: 'application/json' for reliable JSON output
 }
 
 // ---------------------------------------------------------------------------
@@ -72,9 +72,14 @@ async function attemptChat(
 ): Promise<string> {
   const ai = getClient()
 
-  const systemTurn = messages.find((m) => m.role === 'system')
-  const conversationTurns = messages.filter((m) => m.role !== 'system')
+  // Collect ALL system messages and join them as one systemInstruction.
+  // Previously only the first system message was used — this caused the
+  // orchestrator's JSON schema instruction (the 3rd system message) to be
+  // silently dropped, making the model return free text instead of JSON.
+  const systemParts = messages.filter((m) => m.role === 'system').map((m) => m.content)
+  const systemInstruction = systemParts.length > 0 ? systemParts.join('\n\n') : undefined
 
+  const conversationTurns = messages.filter((m) => m.role !== 'system')
   const contents = conversationTurns.map((m) => ({
     role: m.role === 'assistant' ? ('model' as const) : ('user' as const),
     parts: [{ text: m.content }],
@@ -84,9 +89,10 @@ async function attemptChat(
     model: modelId,
     contents,
     config: {
-      ...(systemTurn ? { systemInstruction: systemTurn.content } : {}),
+      ...(systemInstruction ? { systemInstruction } : {}),
+      ...(opts?.json ? { responseMimeType: 'application/json' } : {}),
       ...(opts?.thinking
-        ? { thinkingConfig: { thinkingBudget: 1024 } }
+        ? { thinkingConfig: { thinkingBudget: 8192 } }
         : {}),
     },
   })
@@ -95,13 +101,10 @@ async function attemptChat(
 }
 
 // ---------------------------------------------------------------------------
-// chat() — plain text completion with automatic fallback
+// chat() — plain text completion with automatic model fallback
 // ---------------------------------------------------------------------------
 
 export async function chat(messages: ChatTurn[], opts?: ChatOptions): Promise<string> {
-  // Build the model attempt order:
-  // 1. User-specified model (if any) goes first
-  // 2. Then the rest of the fallback chain in order
   const preferredId = opts?.model ?? DEFAULT_MODEL_ID
   const chain = [
     preferredId,
@@ -111,33 +114,31 @@ export async function chat(messages: ChatTurn[], opts?: ChatOptions): Promise<st
   let lastError: unknown
   for (const modelId of chain) {
     try {
-      const result = await attemptChat(modelId, messages, opts)
-      return result
+      return await attemptChat(modelId, messages, opts)
     } catch (err) {
       lastError = err
       if (isFallbackError(err)) {
-        // Rate limited or unavailable — try next model
-        console.warn(`[llm] Model ${modelId} unavailable, falling back…`, err)
+        console.warn(`[llm] ${modelId} unavailable, trying next model…`)
         continue
       }
-      // Non-rate-limit error (bad request, auth, etc.) — don't retry
       throw err
     }
   }
 
-  // All models exhausted
   throw lastError ?? new Error('All Gemini models exhausted')
 }
 
 // ---------------------------------------------------------------------------
 // chatJson<T>() — JSON-mode completion
+// Always uses responseMimeType: 'application/json' so the model is constrained
+// to return valid JSON — no markdown fences, no commentary.
 // ---------------------------------------------------------------------------
 
 export async function chatJson<T = unknown>(
   messages: ChatTurn[],
-  opts?: ChatOptions,
+  opts?: Omit<ChatOptions, 'json'>,
 ): Promise<T> {
-  const text = await chat(messages, opts)
+  const text = await chat(messages, { ...opts, json: true })
   return extractJson<T>(text)
 }
 
@@ -146,28 +147,28 @@ export async function chatJson<T = unknown>(
 // ---------------------------------------------------------------------------
 
 export function extractJson<T>(text: string): T {
-  // 1. Try direct parse.
+  // 1. Direct parse (works when responseMimeType: 'application/json' is set).
   try { return JSON.parse(text) as T } catch { /* continue */ }
 
-  // 2. Try fenced ```json block.
+  // 2. Fenced ```json block.
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
   if (fenced?.[1]) {
     try { return JSON.parse(fenced[1]) as T } catch { /* continue */ }
   }
 
-  // 3. Try first { ... } block.
+  // 3. First { ... } block.
   const obj = text.match(/\{[\s\S]*\}/)
   if (obj) {
     try { return JSON.parse(obj[0]) as T } catch { /* continue */ }
   }
 
-  // 4. Try first [ ... ] block.
+  // 4. First [ ... ] block.
   const arr = text.match(/\[[\s\S]*\]/)
   if (arr) {
     try { return JSON.parse(arr[0]) as T } catch { /* continue */ }
   }
 
-  throw new Error('Gemini did not return valid JSON')
+  throw new Error('Model did not return valid JSON')
 }
 
 // ---------------------------------------------------------------------------
@@ -187,7 +188,6 @@ export async function describeImage(imageBase64: string, prompt: string): Promis
     ? 'image/jpeg'
     : 'image/png'
 
-  // Vision — use flash with fallback
   for (const modelId of GEMINI_MODELS.map((m) => m.id)) {
     try {
       const response = await ai.models.generateContent({
@@ -209,5 +209,5 @@ export async function describeImage(imageBase64: string, prompt: string): Promis
     }
   }
 
-  throw new Error('All Gemini models exhausted for vision')
+  throw new Error('All models exhausted for vision')
 }

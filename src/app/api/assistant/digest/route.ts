@@ -8,7 +8,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
-import { chat, extractJson } from '@/lib/ai/llm'
+import { chatJson } from '@/lib/ai/llm'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -279,14 +279,14 @@ function normalizeLlmDigest(parsed: unknown): LlmDigest {
 }
 
 async function generateLlmDigest(stats: DigestStats): Promise<LlmDigest> {
-  const text = await chat(
+  const data = await chatJson<unknown>(
     [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: buildUserPrompt(stats) },
     ],
     { thinking: false },
   )
-  return normalizeLlmDigest(extractJson<unknown>(text))
+  return normalizeLlmDigest(data)
 }
 
 // ---------------------------------------------------------------------------
