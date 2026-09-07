@@ -4,62 +4,14 @@
 // Features automatic fallback through the model chain when rate-limited or unavailable.
 
 import { GoogleGenAI } from '@google/genai'
+import {
+  GEMINI_MODELS,
+  DEFAULT_MODEL_ID,
+  type GeminiModelInfo,
+} from './models'
 
-// ---------------------------------------------------------------------------
-// Singleton client
-// ---------------------------------------------------------------------------
-
-let _client: GoogleGenAI | null = null
-
-function getClient(): GoogleGenAI {
-  if (!_client) {
-    const apiKey = process.env.GEMINI_API_KEY
-    if (!apiKey) throw new Error('GEMINI_API_KEY is not set')
-    _client = new GoogleGenAI({ apiKey })
-  }
-  return _client
-}
-
-// ---------------------------------------------------------------------------
-// Model registry — ordered fallback chain (fastest/newest → smaller/lite)
-// ---------------------------------------------------------------------------
-
-export interface GeminiModelInfo {
-  id: string
-  name: string        // Human-readable name shown in UI
-  description: string
-}
-
-export const GEMINI_MODELS: GeminiModelInfo[] = [
-  {
-    id: 'gemini-2.0-flash',
-    name: 'Gemini 2.0 Flash',
-    description: 'Fastest, most capable — great for all tasks',
-  },
-  {
-    id: 'gemini-1.5-flash',
-    name: 'Gemini 1.5 Flash',
-    description: 'Highly capable, efficient for complex tasks',
-  },
-  {
-    id: 'gemini-1.5-flash-latest',
-    name: 'Gemini 1.5 Flash (Latest)',
-    description: 'Latest 1.5 Flash snapshot with recent improvements',
-  },
-  {
-    id: 'gemini-1.5-flash-8b',
-    name: 'Gemini 1.5 Flash Lite',
-    description: 'Lightweight, very fast — ideal for simple queries',
-  },
-  {
-    id: 'gemini-1.0-pro',
-    name: 'Gemini 1.0 Pro',
-    description: 'Stable baseline model for text generation',
-  },
-]
-
-// The default model to use when none is specified.
-export const DEFAULT_MODEL_ID = GEMINI_MODELS[0].id
+// Re-export so consumers that import from llm.ts still work.
+export { GEMINI_MODELS, DEFAULT_MODEL_ID, type GeminiModelInfo }
 
 // Rate-limit / unavailable error codes that trigger fallback.
 const FALLBACK_TRIGGERS = new Set([429, 503, 500, 503])

@@ -35,7 +35,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { GEMINI_MODELS, DEFAULT_MODEL_ID } from '@/lib/ai/llm'
+import { GEMINI_MODELS, DEFAULT_MODEL_ID } from '@/lib/ai/models'
 import {
   Sheet,
   SheetContent,
