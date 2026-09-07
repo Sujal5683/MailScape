@@ -6,7 +6,8 @@ export const dynamic = 'force-dynamic'
 
 // POST /api/accounts/[accountId]/sync — trigger a real Gmail sync job.
 export async function POST(_req: Request, ctx: { params: Promise<{ accountId: string }> }) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { accountId } = await ctx.params
 
   // Enforce ownership — account must belong to the authenticated user.
@@ -54,7 +55,8 @@ export async function POST(_req: Request, ctx: { params: Promise<{ accountId: st
 // Because the Prisma schema uses onDelete: Cascade, this one delete cascades
 // through emails, categories, threads, rules, notifications, etc.
 export async function DELETE(req: Request, ctx: { params: Promise<{ accountId: string }> }) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { accountId } = await ctx.params
 
   const body = await req.json().catch(() => ({ confirm: false }))

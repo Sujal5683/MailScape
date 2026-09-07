@@ -8,7 +8,8 @@ export const dynamic = 'force-dynamic'
 
 // POST /api/sync/run — trigger an incremental sync (creates a scan job with jobType='incremental_sync').
 export async function POST() {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const config: ScanConfig = {
     scope: 'new_only',
     dateRangePreset: 'last_7_days',

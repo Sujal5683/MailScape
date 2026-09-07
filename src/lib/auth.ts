@@ -1,12 +1,18 @@
-// Auth helper — Supabase-primary session resolution.
+// Auth helper — Supabase-primary + NextAuth-secondary session resolution.
 //
 // Flow:
-//   1. Extract the Supabase JWT from the request cookie (x-supabase-token) or
+//   1. Extract the Supabase JWT from the request cookie (sb-access-token) or
 //      the `Authorization: Bearer <token>` header.
 //   2. Verify the JWT via supabaseAdmin.auth.getUser().
 //   3. Upsert a matching User record in Prisma keyed by supabaseId.
 //   4. Fetch ALL active AccountConnection records for that userId.
 //   5. Return a Session containing userId + accountIds[] (plural for multi-inbox).
+//
+// Fallback (NextAuth Google OAuth login):
+//   When the user logs in via NextAuth (Google sign-in on the login page),
+//   they get a next-auth.session-token cookie but NOT a Supabase cookie.
+//   In that case we fall back to reading the NextAuth JWT and resolving the
+//   user from their Google email address in the Prisma DB.
 //
 // No seed data. No fake bypasses. If the user is not authenticated, getSession()
 // throws — callers (API routes) will catch and return 401.
@@ -14,6 +20,7 @@
 import { headers, cookies } from 'next/headers'
 import { db } from '@/lib/db'
 import { verifySupabaseToken } from '@/lib/supabase'
+import { getToken } from 'next-auth/jwt'
 
 export interface Session {
   userId: string
@@ -39,11 +46,10 @@ export class AuthError extends Error {
  * Throws AuthError (401) if unauthenticated.
  */
 export async function getSession(): Promise<Session> {
-  // --- 1. Extract Supabase JWT ---
-  // Try Authorization header first (API clients), then cookie (browser).
   const headerStore = await headers()
   const cookieStore = await cookies()
 
+  // ── 1. Try Supabase JWT ──────────────────────────────────────────────────
   let token: string | null = null
 
   const authHeader = headerStore.get('authorization') ?? headerStore.get('Authorization')
@@ -52,71 +58,98 @@ export async function getSession(): Promise<Session> {
   }
 
   if (!token) {
-    // Next.js Supabase SSR puts the access token in sb-access-token cookie.
     token =
       cookieStore.get('sb-access-token')?.value ??
       cookieStore.get('supabase-auth-token')?.value ??
       null
   }
 
-  // Fallback: try the NEXTAUTH_SECRET session cookie for NextAuth-authenticated users.
-  // When GoogleProvider successfully completes, we can read the sub from the JWT.
-  // This allows the app to work when user logs in via NextAuth Google flow.
   if (!token) {
     // Check for any supabase-related cookie (handles various naming schemes).
-    for (const [name, value] of Object.entries(Object.fromEntries(
-      cookieStore.getAll().map(c => [c.name, c.value])
-    ))) {
-      if (name.includes('supabase') && name.includes('token')) {
-        token = value
+    for (const c of cookieStore.getAll()) {
+      if (c.name.includes('supabase') && (c.name.includes('token') || c.name.includes('auth'))) {
+        token = c.value
         break
       }
     }
   }
 
-  if (!token) {
-    throw new AuthError('No authentication token found. Please log in.')
+  if (token) {
+    // Verify Supabase JWT
+    const supabaseUser = await verifySupabaseToken(token)
+    if (!supabaseUser) {
+      throw new AuthError('Invalid or expired Supabase session. Please log in again.')
+    }
+
+    // Upsert User in Prisma
+    const user = await db.user.upsert({
+      where: { supabaseId: supabaseUser.id },
+      update: {
+        email: supabaseUser.email ?? '',
+        name: supabaseUser.user_metadata?.full_name ?? supabaseUser.user_metadata?.name ?? null,
+        avatarUrl: supabaseUser.user_metadata?.avatar_url ?? null,
+      },
+      create: {
+        supabaseId: supabaseUser.id,
+        email: supabaseUser.email ?? '',
+        name: supabaseUser.user_metadata?.full_name ?? supabaseUser.user_metadata?.name ?? null,
+        avatarUrl: supabaseUser.user_metadata?.avatar_url ?? null,
+      },
+    })
+
+    const accounts = await db.accountConnection.findMany({
+      where: { userId: user.id, status: { not: 'disconnected' } },
+      select: { id: true },
+    })
+    const accountIds = accounts.map((a) => a.id)
+
+    return {
+      userId: user.id,
+      accountIds,
+      accountId: accountIds[0] ?? '',
+      email: user.email,
+      name: user.name,
+    }
   }
 
-  // --- 2. Verify JWT ---
-  const supabaseUser = await verifySupabaseToken(token)
-  if (!supabaseUser) {
-    throw new AuthError('Invalid or expired session. Please log in again.')
+  // ── 2. Fall back to NextAuth JWT (Google OAuth login flow) ──────────────
+  // When user logs in via the login page's "Continue with Google" button,
+  // NextAuth handles the OAuth flow and sets a next-auth.session-token cookie.
+  // We decode that token to get the user's Google email, then look them up
+  // in Prisma (they were upserted in the NextAuth signIn callback).
+  try {
+    const nextAuthToken = await getToken({
+      req: {
+        cookies: Object.fromEntries(cookieStore.getAll().map((c) => [c.name, c.value])),
+        headers: Object.fromEntries(headerStore.entries()),
+      } as Parameters<typeof getToken>[0]['req'],
+      secret: process.env.NEXTAUTH_SECRET ?? '',
+    })
+
+    if (nextAuthToken?.email) {
+      const email = nextAuthToken.email as string
+      const user = await db.user.findUnique({ where: { email } })
+      if (user) {
+        const accounts = await db.accountConnection.findMany({
+          where: { userId: user.id, status: { not: 'disconnected' } },
+          select: { id: true },
+        })
+        const accountIds = accounts.map((a) => a.id)
+
+        return {
+          userId: user.id,
+          accountIds,
+          accountId: accountIds[0] ?? '',
+          email: user.email,
+          name: user.name,
+        }
+      }
+    }
+  } catch {
+    // NextAuth token decode failed — fall through to the error below.
   }
 
-  // --- 3. Upsert User in Prisma ---
-  const user = await db.user.upsert({
-    where: { supabaseId: supabaseUser.id },
-    update: {
-      email: supabaseUser.email ?? '',
-      name: supabaseUser.user_metadata?.full_name ?? supabaseUser.user_metadata?.name ?? null,
-      avatarUrl: supabaseUser.user_metadata?.avatar_url ?? null,
-    },
-    create: {
-      supabaseId: supabaseUser.id,
-      email: supabaseUser.email ?? '',
-      name: supabaseUser.user_metadata?.full_name ?? supabaseUser.user_metadata?.name ?? null,
-      avatarUrl: supabaseUser.user_metadata?.avatar_url ?? null,
-    },
-  })
-
-  // --- 4. Fetch all active AccountConnections ---
-  const accounts = await db.accountConnection.findMany({
-    where: { userId: user.id, status: { not: 'disconnected' } },
-    select: { id: true },
-  })
-
-  const accountIds = accounts.map((a) => a.id)
-
-  // --- 5. Return session ---
-  return {
-    userId: user.id,
-    accountIds,
-    // Backwards-compat single accessor — first account or empty string.
-    accountId: accountIds[0] ?? '',
-    email: user.email,
-    name: user.name,
-  }
+  throw new AuthError('No authentication token found. Please log in.')
 }
 
 /**

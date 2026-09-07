@@ -84,7 +84,8 @@ function patchFor(action: BulkEmailAction): Record<string, boolean> {
 }
 
 export async function POST(req: Request) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   let body: { ids?: unknown; action?: unknown }
   try {
     body = await readBody<{ ids?: unknown; action?: unknown }>(req)

@@ -9,7 +9,8 @@ export const dynamic = 'force-dynamic'
 
 // POST /api/search — structured filters → cursor-paginated results.
 export async function POST(req: Request) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const filters = await readBody<SearchFilters>(req)
   const limit = Math.min(filters.limit ?? 30, 100)
 

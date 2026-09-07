@@ -7,7 +7,8 @@ export const dynamic = 'force-dynamic'
 
 // GET /api/senders — sender intelligence with optional search.
 export async function GET(req: Request) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const url = new URL(req.url)
   const q = url.searchParams.get('q') ?? ''
   if (session.accountIds.length === 0) return NextResponse.json([])

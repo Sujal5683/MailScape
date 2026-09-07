@@ -23,6 +23,12 @@ from prisma import Prisma
 _SCHEMA_PATH = Path(__file__).resolve().parents[2] / "prisma" / "schema.prisma"
 os.environ.setdefault("PRISMA_SCHEMA", str(_SCHEMA_PATH))
 
+from app.config.settings import settings
+os.environ.setdefault("DATABASE_URL", settings.database_url)
+# Set DIRECT_URL if provided — Prisma needs this for operations that bypass pgbouncer.
+if settings.direct_url:
+    os.environ.setdefault("DIRECT_URL", settings.direct_url)
+
 _client: Prisma | None = None
 
 
@@ -46,7 +52,10 @@ async def connect() -> None:
 async def disconnect() -> None:
     """Close the DB connection (called on FastAPI shutdown)."""
     if _client is not None:
-        await _client.disconnect()
+        try:
+            await _client.disconnect()
+        except Exception:
+            pass
 
 
 # Module-level handle. ``Prisma()`` is cheap; ``connect()`` is what opens

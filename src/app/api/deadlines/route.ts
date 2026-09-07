@@ -7,7 +7,8 @@ export const dynamic = 'force-dynamic'
 
 // GET /api/deadlines?status=open|done|missed|all (default: all)
 export async function GET(req: Request) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const url = new URL(req.url)
   const status = url.searchParams.get('status') ?? 'all'
   const where: Record<string, unknown> = { accountId: session.accountId }

@@ -51,7 +51,8 @@ async function getOwned(session: { userId: string }, id: string) {
 // (AI_CONVERSATION_RENAMED | AI_CONVERSATION_ARCHIVED | AI_CONVERSATION_UNARCHIVED)
 // describing the change. Returns the updated conversation.
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { id } = await ctx.params
   const row = await getOwned(session, id)
 
@@ -128,7 +129,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 // have a record even if the cascading delete fails partway through.
 // Returns { ok: true }.
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { id } = await ctx.params
   const row = await getOwned(session, id)
 

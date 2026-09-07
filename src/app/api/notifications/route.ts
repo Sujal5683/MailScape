@@ -8,7 +8,8 @@ export const dynamic = 'force-dynamic'
 
 // GET /api/notifications?filter=all|unread|important — grouped notification center.
 export async function GET(req: Request) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const url = new URL(req.url)
   const filter = url.searchParams.get('filter') ?? 'all'
   if (session.accountIds.length === 0) return NextResponse.json([])

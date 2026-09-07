@@ -52,7 +52,8 @@ function mapRow(row: {
 // Returns { items, nextCursor, total } — nextCursor is null when the last page
 // was returned. Account-scoped (accountId = session.accountId).
 export async function GET(req: Request) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const url = new URL(req.url)
   const type = url.searchParams.get('type')?.trim() || undefined
   const surfaceRaw = url.searchParams.get('surface')?.trim() || undefined

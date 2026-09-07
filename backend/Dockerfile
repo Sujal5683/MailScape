@@ -23,17 +23,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # --- Install Python deps (cached layer) -------------------------------------
-COPY backend/pyproject.toml ./
-RUN pip install --upgrade pip && pip install .
+# Copy requirements.txt first so pip install is cached unless deps change.
+COPY backend/requirements.txt ./requirements.txt
+RUN pip install --upgrade pip && pip install -r requirements.txt
 
 # --- Application source + shared Prisma schema ------------------------------
 COPY backend/app ./app
 COPY prisma ./prisma
 
-# Generate the Prisma Python client at build time. This is a no-op until the
-# python generator block is added to prisma/schema.prisma (see README); the
-# `|| true` keeps the build resilient during early migration.
-RUN prisma generate || true
+# Generate the Prisma Python client at build time.
+# DATABASE_URL is needed at runtime, not at generate time — the generator
+# only reads the schema file. We use a dummy URL so the command succeeds.
+ENV DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy"
+RUN prisma generate --schema=./prisma/schema.prisma || true
 
 # --- Non-root user + healthcheck --------------------------------------------
 RUN useradd --create-home --uid 10001 appuser && chown -R appuser:appuser /app

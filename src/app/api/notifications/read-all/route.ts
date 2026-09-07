@@ -6,7 +6,8 @@ export const dynamic = 'force-dynamic'
 
 // POST /api/notifications/read-all
 export async function POST() {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   await db.notification.updateMany({
     where: { accountId: session.accountId, isRead: false },
     data: { isRead: true },

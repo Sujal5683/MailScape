@@ -7,7 +7,8 @@ export const dynamic = 'force-dynamic'
 
 // POST /api/emails/[messageId]/read — mark read/unread (reversible write).
 export async function POST(req: Request, ctx: { params: Promise<{ messageId: string }> }) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { messageId } = await ctx.params
   const { read } = await readBody<{ read?: boolean }>(req)
   const target = read === false ? false : true

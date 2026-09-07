@@ -21,7 +21,8 @@ async function assertOwned(accountId: string, id: string) {
 }
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { id } = await ctx.params
   await assertOwned(session.accountId, id)
   const body = await readBody<Partial<ScanConfigurationInput>>(req)
@@ -50,7 +51,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { id } = await ctx.params
   await assertOwned(session.accountId, id)
   await deleteScanConfiguration(session.accountId, id)

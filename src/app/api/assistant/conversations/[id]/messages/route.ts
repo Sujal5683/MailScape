@@ -25,7 +25,8 @@ function safeParse<T>(s: string): T | null {
 
 // GET /api/assistant/conversations/[id]/messages
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { id } = await ctx.params
   const conv = await db.assistantConversation.findFirst({ where: { id, userId: session.userId } })
   if (!conv) throw notFound('Conversation not found')
@@ -38,7 +39,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 
 // POST /api/assistant/conversations/[id]/messages — send a user message, get assistant response.
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { id } = await ctx.params
   const conv = await db.assistantConversation.findFirst({ where: { id, userId: session.userId } })
   if (!conv) throw notFound('Conversation not found')

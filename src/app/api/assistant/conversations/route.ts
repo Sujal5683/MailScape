@@ -36,7 +36,8 @@ function mapConv(c: {
 // user's "active" chats. Pass `?includeArchived=true` to surface them too
 // (used by the rail's "Show archived" toggle).
 export async function GET(req: Request) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
   const { searchParams } = new URL(req.url)
   const includeArchived = searchParams.get('includeArchived') === 'true'
@@ -55,7 +56,8 @@ export async function GET(req: Request) {
 
 // POST /api/assistant/conversations — create conversation.
 export async function POST(req: Request) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const body = await readBody<{ mode?: AssistantMode; title?: string }>(req)
   if (body.title !== undefined && typeof body.title !== 'string') {
     throw new ApiError('title must be a string', 400)

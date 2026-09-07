@@ -12,7 +12,8 @@ import { notFound } from '@/lib/api-helpers'
 export const dynamic = 'force-dynamic'
 
 export async function GET(_req: Request, ctx: { params: Promise<{ messageId: string }> }) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { messageId } = await ctx.params
 
   // Find the email → its thread → its conversation

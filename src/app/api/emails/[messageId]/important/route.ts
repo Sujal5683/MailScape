@@ -8,7 +8,8 @@ export const dynamic = 'force-dynamic'
 // POST /api/emails/[messageId]/important — mark important/unimportant (reversible write).
 // Mirrors the read/star routes: updates the flag, writes an audit event with previous state.
 export async function POST(req: Request, ctx: { params: Promise<{ messageId: string }> }) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { messageId } = await ctx.params
   const { important } = await readBody<{ important?: boolean }>(req)
   const target = important === false ? false : true

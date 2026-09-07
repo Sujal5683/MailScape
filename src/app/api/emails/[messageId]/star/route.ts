@@ -7,7 +7,8 @@ export const dynamic = 'force-dynamic'
 
 // POST /api/emails/[messageId]/star — star/unstar (reversible write).
 export async function POST(req: Request, ctx: { params: Promise<{ messageId: string }> }) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { messageId } = await ctx.params
   const { starred } = await readBody<{ starred?: boolean }>(req)
   const target = starred === false ? false : true

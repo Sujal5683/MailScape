@@ -7,7 +7,8 @@ export const dynamic = 'force-dynamic'
 
 // PATCH /api/deadlines/[id] — update status (open|done|missed).
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { id } = await ctx.params
   const body = await readBody<{ status?: 'open' | 'done' | 'missed' }>(req)
   const dl = await db.deadline.findFirst({ where: { id, accountId: session.accountId } })
@@ -31,7 +32,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 
 // DELETE /api/deadlines/[id]
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { id } = await ctx.params
   const dl = await db.deadline.findFirst({ where: { id, accountId: session.accountId } })
   if (!dl) throw notFound('Deadline not found')

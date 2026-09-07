@@ -17,7 +17,8 @@ export const dynamic = 'force-dynamic'
 // Account-scoped: the email must belong to the session account. Returns
 // { ok: true } on success.
 export async function DELETE(req: Request, ctx: { params: Promise<{ messageId: string }> }) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { messageId } = await ctx.params
 
   // Parse + validate the confirmation flag. We accept both DELETE with a body

@@ -17,7 +17,8 @@ export const dynamic = 'force-dynamic'
 // Account-scoped via getSession. Skips the default snooze exclusion (sent
 // items are never snoozed in practice).
 export async function GET() {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const where = {
     accountId: session.accountId,

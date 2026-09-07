@@ -1,7 +1,10 @@
-// Next.js middleware — authentication guard.
+// Next.js proxy — authentication guard.
+//
+// NOTE: In Next.js 16, "middleware.ts" was renamed to "proxy.ts".
+// This file replaces src/middleware.ts.
 //
 // Protects all app routes. Unauthenticated users are redirected to /login.
-// The middleware checks for the Supabase session cookie; if it's absent,
+// The proxy checks for the Supabase session cookie; if it's absent,
 // the user hasn't completed auth and gets sent to the login page.
 //
 // Public routes (no auth required):
@@ -20,7 +23,7 @@ function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/') || pathname.startsWith(p + '?'))
 }
 
-export function middleware(request: NextRequest) {
+export default function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // Always allow public routes and Next.js internals.
@@ -60,6 +63,6 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Run the middleware on all routes except static files.
+  // Run the proxy on all routes except static files.
   matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)'],
 }

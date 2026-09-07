@@ -395,7 +395,8 @@ function buildFallbackDigest(stats: DigestStats): LlmDigest {
 
 export async function POST() {
   try {
-    const session = await getSession()
+    const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const stats = await gatherStats(session.accountId)
 
     let core: LlmDigest

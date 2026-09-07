@@ -6,7 +6,8 @@ export const dynamic = 'force-dynamic'
 
 // POST /api/sync/pause — pause automatic sync for the account.
 export async function POST() {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   await db.syncState.update({
     where: { accountId: session.accountId },
     data: { syncStatus: 'idle', errorMessage: 'Sync paused by user' },

@@ -10,7 +10,8 @@ export const dynamic = 'force-dynamic'
 // resolve the category in a second lightweight query when a categoryId is present.)
 // Returns null when no ClassificationResult row exists.
 export async function GET(_req: Request, ctx: { params: Promise<{ messageId: string }> }) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { messageId } = await ctx.params
 
   const email = await db.email.findFirst({

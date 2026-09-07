@@ -15,13 +15,15 @@ import type { ScanConfig } from '@/lib/scan/types'
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const rows = await listScanConfigurations(session.accountId)
   return NextResponse.json(rows)
 }
 
 export async function POST(req: Request) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const body = await readBody<{
     name?: string
     description?: string

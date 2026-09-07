@@ -8,7 +8,8 @@ export const dynamic = 'force-dynamic'
 
 // GET /api/threads/[threadId] — thread context with all messages.
 export async function GET(_req: Request, ctx: { params: Promise<{ threadId: string }> }) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { threadId } = await ctx.params
   const thread = await db.thread.findFirst({
     where: { id: threadId, accountId: session.accountId },

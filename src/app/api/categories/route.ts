@@ -8,7 +8,8 @@ export const dynamic = 'force-dynamic'
 
 // GET /api/categories — list with counts across all connected accounts.
 export async function GET() {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   if (session.accountIds.length === 0) return NextResponse.json([])
   const categories = await db.category.findMany({
     where: { accountId: { in: session.accountIds } },
@@ -25,7 +26,8 @@ export async function GET() {
 
 // POST /api/categories — create a custom category on the primary account.
 export async function POST(req: Request) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   // Scope new categories to the first active account.
   const accountId = session.accountIds[0]
   if (!accountId) throw new ApiError('No connected accounts', 400)

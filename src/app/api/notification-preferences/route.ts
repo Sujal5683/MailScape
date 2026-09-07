@@ -37,7 +37,8 @@ export interface NotificationPrefDTO {
 // the channel-wide default. Per-category rows inherit the global default
 // unless an explicit override row exists.
 export async function GET() {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const accountId = session.accountId
 
   const [rows, categories] = await Promise.all([
@@ -81,7 +82,8 @@ export async function GET() {
 // categoryId belongs to the active account. Emits a NOTIFICATION_PREF_UPDATED
 // audit event.
 export async function PUT(req: Request) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const body = await readBody<{
     channel: string
     categoryId: string | null

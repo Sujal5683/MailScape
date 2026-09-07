@@ -10,7 +10,8 @@ export const dynamic = 'force-dynamic'
 // "not found" (404) so we never leak existence across accounts. Returns
 // { ok: true } and emits a SAVED_SEARCH_DELETED audit event.
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { id } = await ctx.params
 
   // findFirst (not findUnique) so the accountId filter is enforced — a

@@ -12,7 +12,8 @@ export const dynamic = 'force-dynamic'
 // audit event (EMAIL_SNOOZED / EMAIL_UNSNOOZED) with the previous snoozedUntil
 // in metadata so the action is reversible via the audit log. Returns { ok: true }.
 export async function POST(req: Request, ctx: { params: Promise<{ messageId: string }> }) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { messageId } = await ctx.params
   const { until } = await readBody<{ until?: string | null }>(req)
 

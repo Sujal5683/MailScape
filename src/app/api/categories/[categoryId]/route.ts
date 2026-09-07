@@ -13,7 +13,8 @@ async function getOwned(session: { accountId: string; userId: string }, id: stri
 }
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ categoryId: string }> }) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { categoryId } = await ctx.params
   await getOwned(session, categoryId)
   const body = await readBody<Partial<{ name: string; description: string; color: string; icon: string }>>(req)
@@ -42,7 +43,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ categoryId: s
 }
 
 export async function DELETE(req: Request, ctx: { params: Promise<{ categoryId: string }> }) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { categoryId } = await ctx.params
   const cat = await getOwned(session, categoryId)
   if (cat.systemDefault) throw new ApiError('System categories cannot be deleted', 400)

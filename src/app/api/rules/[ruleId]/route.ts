@@ -8,7 +8,8 @@ import type { ConditionGroup, RuleAction } from '@/lib/types'
 export const dynamic = 'force-dynamic'
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ ruleId: string }> }) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { ruleId } = await ctx.params
   const existing = await db.rule.findFirst({ where: { id: ruleId, accountId: session.accountId } })
   if (!existing) throw notFound('Rule not found')
@@ -58,7 +59,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ ruleId: strin
 }
 
 export async function DELETE(req: Request, ctx: { params: Promise<{ ruleId: string }> }) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { ruleId } = await ctx.params
   const existing = await db.rule.findFirst({ where: { id: ruleId, accountId: session.accountId } })
   if (!existing) throw notFound('Rule not found')

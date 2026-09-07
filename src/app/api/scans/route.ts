@@ -11,7 +11,8 @@ import type { ScanConfig, ScanStatus } from '@/lib/scan/types'
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: Request) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const url = new URL(req.url)
   const status = url.searchParams.get('status') as ScanStatus | null
   const limitRaw = url.searchParams.get('limit')
@@ -21,7 +22,8 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const body = await readBody<Partial<ScanConfig> & { configurationId?: string }>(req)
   if (!body.scope) throw new ApiError('scope is required', 400)
   if (!body.dateRangePreset) throw new ApiError('dateRangePreset is required', 400)

@@ -8,7 +8,8 @@ export const dynamic = 'force-dynamic'
 
 // POST /api/assistant/actions/[id]/revert — executes the recorded inverse operation.
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { id } = await ctx.params
   const action = await db.assistantAction.findFirst({
     where: { id, userId: session.userId },

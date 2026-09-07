@@ -7,7 +7,8 @@ import { notFound } from '@/lib/api-helpers'
 export const dynamic = 'force-dynamic'
 
 export async function GET(_req: Request, ctx: { params: Promise<{ senderId: string }> }) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { senderId } = await ctx.params
   const sender = await db.sender.findFirst({
     where: { id: senderId, accountId: session.accountId },

@@ -66,6 +66,14 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
     }
   }
   if (!res.ok) {
+    // If the token is expired/invalid, the API returns 401. 
+    // Proxy lets it through because the cookie exists, but we must redirect to login.
+    if (res.status === 401 && typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+      window.location.href = `/login?callbackUrl=${encodeURIComponent(window.location.href)}`
+      // Prevent further execution for this request
+      return new Promise(() => {}) as Promise<T>
+    }
+
     const msg = typeof data === 'object' && data && 'error' in data
       ? String((data as { error: string }).error)
       : `Request failed (${res.status})`

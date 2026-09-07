@@ -8,7 +8,8 @@ export const dynamic = 'force-dynamic'
 
 // GET /api/dashboard — aggregated operational view, unified across all connected accounts.
 export async function GET() {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const accountIds = session.accountIds
 
   // Return a sensible empty state when no accounts are connected yet.

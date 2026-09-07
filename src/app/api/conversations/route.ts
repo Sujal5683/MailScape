@@ -10,7 +10,8 @@ import { mapConversationSummary } from '@/lib/conversations/mappers'
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: Request) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const url = new URL(req.url)
   const status = url.searchParams.get('status')
   const followUp = url.searchParams.get('followUp')

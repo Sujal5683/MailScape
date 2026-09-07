@@ -35,7 +35,8 @@ export const dynamic = 'force-dynamic'
 //     drafts, sent, and spam. Existing *Only params (unreadOnly, importantOnly,
 //     starredOnly, snoozedOnly, includeSnoozed) layer on top of this default.
 export async function GET(req: Request) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const url = new URL(req.url)
   const cursor = url.searchParams.get('cursor') ?? undefined
   const limit = Math.min(parseInt(url.searchParams.get('limit') ?? '30', 10), 100)

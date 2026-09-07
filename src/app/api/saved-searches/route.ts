@@ -72,7 +72,8 @@ function mapRow(row: {
 // newest first. Empty list when none saved (no 404 — the panel renders an
 // empty state either way).
 export async function GET() {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   if (session.accountIds.length === 0) return NextResponse.json([])
   const rows = await db.savedSearch.findMany({
     where: { accountId: { in: session.accountIds } },
@@ -86,7 +87,8 @@ export async function GET() {
 // Returns the created row (mapped to SavedSearch DTO). Validates name +
 // filters shape; rejects empty names. Persists filters as a JSON string.
 export async function POST(req: Request) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const body = await readBody<{ name?: string; filters?: unknown }>(req)
   const name = body.name?.trim()
   if (!name) throw new ApiError('Name is required', 400)

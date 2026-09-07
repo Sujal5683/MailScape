@@ -7,7 +7,8 @@ export const dynamic = 'force-dynamic'
 
 // PATCH /api/action-items/[id] — toggle status.
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { id } = await ctx.params
   const body = await readBody<{ status?: 'open' | 'done' }>(req)
   const ai = await db.actionItem.findFirst({ where: { id, accountId: session.accountId } })
@@ -31,7 +32,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 
 // DELETE /api/action-items/[id]
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { id } = await ctx.params
   const ai = await db.actionItem.findFirst({ where: { id, accountId: session.accountId } })
   if (!ai) throw notFound('Action item not found')

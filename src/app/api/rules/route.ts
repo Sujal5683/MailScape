@@ -9,7 +9,8 @@ export const dynamic = 'force-dynamic'
 
 // GET /api/rules
 export async function GET() {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   if (session.accountIds.length === 0) return NextResponse.json([])
   const rules = await db.rule.findMany({
     where: { accountId: { in: session.accountIds } },
@@ -20,7 +21,8 @@ export async function GET() {
 
 // POST /api/rules — create rule scoped to the primary account.
 export async function POST(req: Request) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const accountId = session.accountIds[0]
   if (!accountId) throw new ApiError('No connected accounts', 400)
   const body = await readBody<{

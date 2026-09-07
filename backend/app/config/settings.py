@@ -33,6 +33,9 @@ class Settings(BaseSettings):
 
     # --- Database (REQUIRED) -------------------------------------------
     database_url: str = Field(..., description="SQLite/Postgres connection string")
+    # direct_url is optional — used by some Prisma operations that bypass pgbouncer.
+    # Render deployments should set this to the session-mode pooler URL.
+    direct_url: str | None = None
 
     # --- Secrets (optional in dev, required in prod) -------------------
     gemini_api_key: str | None = None
@@ -41,6 +44,10 @@ class Settings(BaseSettings):
     nextauth_secret: str | None = None
     vapid_public_key: str | None = None
     vapid_private_key: str | None = None
+
+    # --- CORS ----------------------------------------------------------
+    # Comma-separated list of allowed origins. Defaults to "*" if not set.
+    allowed_origins: str | None = None
 
     @model_validator(mode="after")
     def _enforce_prod_secrets(self) -> "Settings":
@@ -52,8 +59,6 @@ class Settings(BaseSettings):
             "google_client_id",
             "google_client_secret",
             "nextauth_secret",
-            "vapid_public_key",
-            "vapid_private_key",
         )
         missing = [n for n in required if not getattr(self, n)]
         if missing:

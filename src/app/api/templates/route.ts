@@ -53,7 +53,8 @@ function mapRow(row: {
 // for all categories. Newest first (updatedAt desc). Empty list when none
 // saved — the panel renders an empty state either way.
 export async function GET(req: Request) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const url = new URL(req.url)
   const categoryParam = url.searchParams.get('category')
 
@@ -79,7 +80,8 @@ export async function GET(req: Request) {
 // (when supplied) category; rejects empty/over-long names. Emits a
 // TEMPLATE_CREATED audit event.
 export async function POST(req: Request) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const body = await readBody<{
     name?: string
     subject?: string

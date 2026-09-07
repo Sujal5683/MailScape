@@ -7,7 +7,8 @@ export const dynamic = 'force-dynamic'
 
 // DELETE /api/notifications/[id]
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { id } = await ctx.params
   const n = await db.notification.findFirst({ where: { id, accountId: session.accountId } })
   if (!n) throw notFound('Notification not found')

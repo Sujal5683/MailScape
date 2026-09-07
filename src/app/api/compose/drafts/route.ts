@@ -8,7 +8,8 @@ export const dynamic = 'force-dynamic'
 
 // POST /api/compose/drafts — save a draft (reversible).
 export async function POST(req: Request) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const body = await readBody<{ accountId?: string; to: Recipient[]; cc?: Recipient[]; subject?: string; body?: string }>(req)
   if (!body.to || !Array.isArray(body.to)) throw new ApiError('Recipients required', 400)
   const draft = await db.draft.create({

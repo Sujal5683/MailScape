@@ -10,7 +10,8 @@ export const dynamic = 'force-dynamic'
 // No real Gmail credentials available; we persist a sent audit event and return a synthetic id.
 // The contract is real: confirmation gating, audit, idempotency by messageId.
 export async function POST(req: Request) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const body = await readBody<{
     accountId?: string
     to: Recipient[]

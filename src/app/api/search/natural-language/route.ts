@@ -9,7 +9,8 @@ export const dynamic = 'force-dynamic'
 
 // POST /api/search/natural-language — convert NL query to structured filters.
 export async function POST(req: Request) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { query } = await readBody<{ query: string }>(req)
   if (!query?.trim()) return NextResponse.json({ parsed: {}, summary: 'Empty query' })
 

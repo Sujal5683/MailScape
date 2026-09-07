@@ -38,7 +38,8 @@ function mapAccount(a: {
 
 // GET /api/accounts — list all connected accounts for the authenticated user.
 export async function GET() {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const accounts = await db.accountConnection.findMany({
     where: { userId: session.userId, status: { not: 'disconnected' } },
     include: { syncState: true },

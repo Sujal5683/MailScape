@@ -57,7 +57,8 @@ async function getOwned(session: { accountId: string; userId: string }, id: stri
 // category (when supplied). Emits a TEMPLATE_UPDATED audit event with the
 // changed-field summary.
 export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { id } = await ctx.params
   await getOwned(session, id)
 
@@ -112,7 +113,8 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
 // owned by a different account is treated as "not found" (404). Returns
 // { ok: true } and emits a TEMPLATE_DELETED audit event.
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { id } = await ctx.params
 
   const row = await getOwned(session, id)

@@ -15,7 +15,8 @@ export const dynamic = 'force-dynamic'
 // Idempotent: if the email is already not archived, the call still succeeds
 // and writes the audit event so the user always gets consistent feedback.
 export async function POST(_req: Request, ctx: { params: Promise<{ messageId: string }> }) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { messageId } = await ctx.params
 
   const email = await db.email.findFirst({

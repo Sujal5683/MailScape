@@ -11,7 +11,8 @@ import { readBody, notFound } from '@/lib/api-helpers'
 export const dynamic = 'force-dynamic'
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { id } = await ctx.params
   const conv = await db.conversation.findFirst({
     where: { id, accountId: session.accountId },
@@ -31,7 +32,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 }
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const session = await getSession()
+  const session = await getSession().catch(() => null)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { id } = await ctx.params
   const body = await readBody<Partial<{ status: string; followUpState: string; importance: string }>>(req)
   const conv = await db.conversation.findFirst({ where: { id, accountId: session.accountId } })

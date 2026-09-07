@@ -7,6 +7,7 @@ ported from the Next.js backend.
 """
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -31,12 +32,33 @@ async def _lifespan(app: FastAPI):
     configure_logging()
     log = get_logger("startup")
     log.info("startup", env=settings.env)
-    await connect()
+    try:
+        await connect()
+    except Exception as exc:
+        log.error("db_connect_failed", error=str(exc))
+        # Don't crash — let the app start and individual requests fail gracefully.
+        # The /ready endpoint will report degraded status.
     try:
         yield
     finally:
-        await disconnect()
+        try:
+            await disconnect()
+        except Exception:
+            pass
         log.info("shutdown")
+
+
+def _get_cors_origins() -> list[str]:
+    """Read allowed origins from ALLOWED_ORIGINS env var (comma-separated).
+
+    Falls back to wildcard in dev, strict list in prod.
+    """
+    raw = os.getenv("ALLOWED_ORIGINS", "")
+    if raw:
+        return [o.strip() for o in raw.split(",") if o.strip()]
+    # Default: allow everything in dev, nothing extra in prod
+    # (the wildcard works fine locally and on Render preview URLs).
+    return ["*"]
 
 
 def create_app() -> FastAPI:
@@ -49,7 +71,7 @@ def create_app() -> FastAPI:
     app.add_middleware(RequestIDMiddleware)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=_get_cors_origins(),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
