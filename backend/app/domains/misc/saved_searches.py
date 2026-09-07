@@ -41,7 +41,7 @@ def _map(row) -> SavedSearch:
 
 async def list_saved_searches(db: Prisma, account_id: str) -> list[SavedSearch]:
     """Return all saved searches for the account, newest first."""
-    rows = await db.saved_search.find_many(
+    rows = await db.savedsearch.find_many(
         where={"accountId": account_id}, order_by={"createdAt": "desc"}
     )
     return [_map(r) for r in rows]
@@ -57,13 +57,13 @@ async def create_saved_search(
     if len(name) > 120:
         raise ValidationFailed("Name must be 120 characters or fewer")
     filters = _sanitize_filters(body.filters.model_dump(exclude_none=True))
-    row = await db.saved_search.create(
+    row = await db.savedsearch.create(
         data={
             "accountId": session.account_id, "name": name,
             "filters": filters.model_dump_json(exclude_none=True),
         }
     )
-    await db.audit_event.create(
+    await db.auditevent.create(
         data={"userId": session.user_id, "accountId": session.account_id,
               "eventType": "SAVED_SEARCH_CREATED", "targetType": "saved_search",
               "targetId": row.id, "sourceSurface": "ui",
@@ -76,13 +76,13 @@ async def delete_saved_search(
     db: Prisma, session: Session, saved_search_id: str
 ) -> None:
     """Delete a saved search + SAVED_SEARCH_DELETED audit event (404 if missing)."""
-    row = await db.saved_search.find_first(
+    row = await db.savedsearch.find_first(
         where={"id": saved_search_id, "accountId": session.account_id}
     )
     if row is None:
         raise NotFound("Saved search not found")
-    await db.saved_search.delete(where={"id": row.id})
-    await db.audit_event.create(
+    await db.savedsearch.delete(where={"id": row.id})
+    await db.auditevent.create(
         data={"userId": session.user_id, "accountId": session.account_id,
               "eventType": "SAVED_SEARCH_DELETED", "targetType": "saved_search",
               "targetId": row.id, "sourceSurface": "ui",

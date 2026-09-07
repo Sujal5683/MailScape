@@ -38,7 +38,7 @@ def map_account(row) -> AccountConnectionDTO:
 
 async def list_accounts(db: Prisma, session: Session) -> list[AccountConnectionDTO]:
     """Return every account owned by the session user, with sync state."""
-    rows = await db.account_connection.find_many(
+    rows = await db.accountconnection.find_many(
         where={"userId": session.user_id}, include={"sync_state": True},
     )
     return [map_account(r) for r in rows]
@@ -48,7 +48,7 @@ async def get_or_create_seed_account(
     db: Prisma, session: Session
 ) -> AccountConnectionDTO:
     """Return the demo seed account (no auto-seeding — defect D3)."""
-    row = await db.account_connection.find_unique(
+    row = await db.accountconnection.find_unique(
         where={"id": session.account_id}, include={"sync_state": True},
     )
     if row is None:
@@ -59,7 +59,7 @@ async def get_or_create_seed_account(
 async def sync_account(db: Prisma, session: Session, account_id: str) -> SyncResponse:
     """Mark the account's sync state as success (mirrors the Next.js demo)."""
     await _ensure_owned(db, session, account_id)
-    await db.sync_state.update(
+    await db.syncstate.update(
         where={"accountId": account_id},
         data={
             "syncStatus": "success",
@@ -79,10 +79,10 @@ async def disconnect_account(
             "Confirmation required", details={"needsConfirmation": True}
         )
     await _ensure_owned(db, session, account_id)
-    await db.account_connection.update(
+    await db.accountconnection.update(
         where={"id": account_id}, data={"status": "disconnected"}
     )
-    await db.audit_event.create(data={
+    await db.auditevent.create(data={
         "userId": session.user_id, "accountId": account_id,
         "eventType": "ACCOUNT_DISCONNECTED", "targetType": "account",
         "targetId": account_id, "sourceSurface": "ui", "metadata": "{}",
@@ -91,6 +91,6 @@ async def disconnect_account(
 
 async def _ensure_owned(db: Prisma, session: Session, account_id: str) -> None:
     """Raise NotFound if the account doesn't exist or isn't owned."""
-    account = await db.account_connection.find_unique(where={"id": account_id})
+    account = await db.accountconnection.find_unique(where={"id": account_id})
     if account is None or account.userId != session.user_id:
         raise NotFound("Account not found")

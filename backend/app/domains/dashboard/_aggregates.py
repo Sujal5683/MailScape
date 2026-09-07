@@ -114,7 +114,7 @@ async def deadlines(db: Prisma, account_id: str) -> list[dict[str, Any]]:
 
 async def action_items(db: Prisma, account_id: str) -> list[dict[str, Any]]:
     """Return top 6 open action items ordered by createdAt desc."""
-    rows = await db.action_item.find_many(
+    rows = await db.actionitem.find_many(
         where={"accountId": account_id, "status": "open"},
         order={"createdAt": "desc"}, take=6,
     )

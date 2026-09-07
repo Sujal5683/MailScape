@@ -8,7 +8,7 @@ up, this module is the single place to swap in the real resolver.
 Note on Prisma Python naming: the ``prisma`` Python client converts camelCase
 schema fields to snake_case by default (``providerAccountId`` ->
 ``provider_account_id``). Model accessors use lowercased snake_case
-(``AccountConnection`` -> ``db.account_connection``).
+(``AccountConnection`` -> ``db.accountconnection``).
 """
 from __future__ import annotations
 
@@ -43,12 +43,12 @@ async def _resolve_seed_account() -> tuple[str, str]:
     id is not present (e.g. a fresh DB migrated by Prisma but not yet
     seeded).
     """
-    account = await db.account_connection.find_first(
+    account = await db.accountconnection.find_first(
         where={"providerAccountId": _SEED_PROVIDER_ACCOUNT_ID}
     )
     if account is not None:
         return account.id, account.userId
-    fallback = await db.account_connection.find_first()
+    fallback = await db.accountconnection.find_first()
     if fallback is not None:
         return fallback.id, fallback.userId
     raise RuntimeError(
@@ -68,7 +68,7 @@ async def get_session() -> Session:
         return _cache
     account_id, user_id = await _resolve_seed_account()
     user = await db.user.find_unique(where={"id": user_id})
-    account = await db.account_connection.find_unique(where={"id": account_id})
+    account = await db.accountconnection.find_unique(where={"id": account_id})
     if user is None or account is None:
         raise RuntimeError("Session resolution failed — user or account missing")
     _cache = Session(

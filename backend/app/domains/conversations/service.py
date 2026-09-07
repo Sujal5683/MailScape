@@ -77,7 +77,7 @@ async def update_conversation(
     data = body.model_dump(exclude_unset=True)
     if data:
         await db.conversation.update(where={"id": conversation_id}, data=data)
-    await db.audit_event.create(data={
+    await db.auditevent.create(data={
         "userId": session.user_id, "accountId": session.account_id,
         "eventType": "CONVERSATION_UPDATED", "targetType": "conversation",
         "targetId": conversation_id, "sourceSurface": "ui",

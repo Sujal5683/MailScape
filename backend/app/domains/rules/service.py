@@ -48,7 +48,7 @@ async def create_rule(db: Prisma, session: Session, body: RuleCreate) -> Rule:
             "priority": body.priority, "enabled": body.enabled, "createdBy": "user",
         }
     )
-    await db.rule_version.create(
+    await db.ruleversion.create(
         data={"ruleId": rule.id, "version": 1, "expression": rule.expression, "actions": rule.actions}
     )
     await _audit(db, session, "RULE_CREATED", rule.id, {"name": rule.name, "ruleId": rule.id})
@@ -71,8 +71,8 @@ async def update_rule(db: Prisma, session: Session, rule_id: str, body: RuleUpda
         data["enabled"] = body.enabled
     updated = await db.rule.update(where={"id": rule_id}, data=data)
     if body.expression or body.actions:
-        agg = await db.rule_version.aggregate(where={"ruleId": rule_id}, _max={"version": True})
-        await db.rule_version.create(
+        agg = await db.ruleversion.aggregate(where={"ruleId": rule_id}, _max={"version": True})
+        await db.ruleversion.create(
             data={"ruleId": rule_id, "version": (agg._max.version or 0) + 1,
                   "expression": updated.expression, "actions": updated.actions}
         )
@@ -89,7 +89,7 @@ async def delete_rule(db: Prisma, session: Session, rule_id: str) -> None:
 
 async def _audit(db: Prisma, session: Session, event_type: str, target_id: str, meta: dict) -> None:
     """Persist an audit event for a rule write."""
-    await db.audit_event.create(
+    await db.auditevent.create(
         data={
             "userId": session.user_id, "accountId": session.account_id,
             "eventType": event_type, "targetType": "rule", "targetId": target_id,

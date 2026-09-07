@@ -55,7 +55,7 @@ async def _flag_toggle(
     if email is None:
         raise NotFound("Email not found")
     await db.email.update(where={"id": mid}, data={field: target})
-    await db.audit_event.create(data={
+    await db.auditevent.create(data={
         **_AUDIT_BASE, "userId": s.user_id, "accountId": s.account_id,
         "targetId": mid, "eventType": event_on if target else event_off,
         "metadata": json.dumps({"previousState": getattr(email, field)}),
@@ -88,7 +88,7 @@ async def snooze(db: Prisma, s: Session, mid: str, until: str | None) -> None:
     if email is None:
         raise NotFound("Email not found")
     await db.email.update(where={"id": mid}, data={"snoozedUntil": resolved})
-    await db.audit_event.create(data={
+    await db.auditevent.create(data={
         **_AUDIT_BASE, "userId": s.user_id, "accountId": s.account_id,
         "targetId": mid,
         "eventType": "EMAIL_SNOOZED" if resolved else "EMAIL_UNSNOOZED",
@@ -126,7 +126,7 @@ async def bulk_action(
         where={"id": {"in": owned_ids}, "accountId": s.account_id},
         data=_PATCH_FOR[action],
     )
-    await db.audit_event.create(data={
+    await db.auditevent.create(data={
         **_AUDIT_BASE, "userId": s.user_id, "accountId": s.account_id,
         "targetId": owned_ids[0], "eventType": f"BULK_{_EVENT_FOR[action]}",
         "metadata": json.dumps({

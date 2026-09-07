@@ -55,7 +55,7 @@ async def list_audit_events(
     if cursor:
         find_kwargs["skip"] = 1
         find_kwargs["cursor"] = {"id": cursor}
-    rows, total = await db.audit_event.find_many(**find_kwargs), await db.audit_event.count(where=where)
+    rows, total = await db.auditevent.find_many(**find_kwargs), await db.auditevent.count(where=where)
     next_cursor = rows[limit - 1].id if len(rows) > limit else None
     return AuditEventPage(
         items=[_map(r) for r in rows[:limit]],

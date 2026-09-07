@@ -58,7 +58,7 @@ async def create_category(
         },
         include=_INCLUDE,
     )
-    await db.audit_event.create(data={
+    await db.auditevent.create(data={
         "userId": session.user_id, "accountId": session.account_id,
         "eventType": "CATEGORY_CREATED", "targetType": "category",
         "targetId": cat.id, "sourceSurface": "ui",
@@ -86,7 +86,7 @@ async def update_category(
     cat = await db.category.update(
         where={"id": category_id}, data=data, include=_INCLUDE,
     )
-    await db.audit_event.create(data={
+    await db.auditevent.create(data={
         "userId": session.user_id, "accountId": session.account_id,
         "eventType": "CATEGORY_UPDATED", "targetType": "category",
         "targetId": category_id, "sourceSurface": "ui",
@@ -104,12 +104,12 @@ async def delete_category(db: Prisma, session: Session, category_id: str) -> Non
         where={"accountId": session.account_id, "name": "Others"},
     )
     if others is not None:
-        await db.category_membership.update_many(
+        await db.categorymembership.update_many(
             where={"categoryId": category_id},
             data={"categoryId": others.id, "source": "system_default"},
         )
     await db.category.delete(where={"id": category_id})
-    await db.audit_event.create(data={
+    await db.auditevent.create(data={
         "userId": session.user_id, "accountId": session.account_id,
         "eventType": "CATEGORY_DELETED", "targetType": "category",
         "targetId": category_id, "sourceSurface": "ui",

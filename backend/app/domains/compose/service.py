@@ -35,7 +35,7 @@ async def save_draft(db: Prisma, session: Session, body: DraftCreate) -> Draft:
               "ccRecipients": json.dumps([r.model_dump() for r in body.cc]),
               "subject": body.subject, "body": body.body}
     )
-    await db.audit_event.create(
+    await db.auditevent.create(
         data={"userId": session.user_id, "accountId": session.account_id,
               "eventType": "DRAFT_SAVED", "targetType": "draft", "targetId": row.id,
               "sourceSurface": "ui",
@@ -56,7 +56,7 @@ async def send_email(db: Prisma, session: Session, body: SendRequest) -> SendRes
     if not body.to:
         raise ValidationFailed("At least one recipient required")
     message_id = f"sent-{secrets.token_hex(4)}"
-    await db.audit_event.create(
+    await db.auditevent.create(
         data={"userId": session.user_id, "accountId": body.accountId or session.account_id,
               "eventType": "EMAIL_SENT", "targetType": "email",
               "targetId": message_id, "sourceSurface": "ui",

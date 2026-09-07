@@ -81,7 +81,7 @@ async def test_notification(db: Prisma, session: Session) -> str:
         data={"accountId": session.account_id, "title": "Test notification",
               "body": "This is a test", "importance": "normal"}
     )
-    await db.audit_event.create(
+    await db.auditevent.create(
         data={"userId": session.user_id, "accountId": session.account_id,
               "eventType": "NOTIFICATION_TEST", "targetType": "notification",
               "targetId": n.id, "sourceSurface": "ui",

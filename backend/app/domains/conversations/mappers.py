@@ -12,7 +12,7 @@ from typing import Any
 
 from app.domains.conversations.schemas import (
     ConversationChange, ConversationDetail, ConversationMessage,
-    ConversationParticipant, ConversationSummary, MessageType,
+    ConversationParticipant, ConversationSummary,
 )
 
 _FIELD_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
@@ -44,7 +44,7 @@ def _parse_participants(raw: str | None) -> list[ConversationParticipant]:
     return out
 
 
-def detect_message_type(subject: str | None, index: int, total: int) -> MessageType:
+def detect_message_type(subject: str | None, index: int, total: int) -> str:
     """Classify a message within a thread (mirrors TS detectMessageType)."""
     if index == 0:
         return "original"

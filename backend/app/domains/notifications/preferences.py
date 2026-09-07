@@ -52,21 +52,21 @@ async def update_preference(
         )
         if cat is None:
             raise NotFound("Category not found")
-    existing = await db.notification_preference.find_first(
+    existing = await db.notificationpreference.find_first(
         where={"accountId": session.account_id, "channel": body.channel, "categoryId": category_id}
     )
     if existing:
-        row = await db.notification_preference.update(
+        row = await db.notificationpreference.update(
             where={"id": existing.id}, data={"enabled": body.enabled}
         )
     else:
-        row = await db.notification_preference.create(
+        row = await db.notificationpreference.create(
             data={
                 "accountId": session.account_id, "channel": body.channel,
                 "categoryId": category_id, "enabled": body.enabled,
             }
         )
-    await db.audit_event.create(
+    await db.auditevent.create(
         data={
             "userId": session.user_id, "accountId": session.account_id,
             "eventType": "NOTIFICATION_PREF_UPDATED",
@@ -78,7 +78,7 @@ async def update_preference(
 
 
 async def _load(db: Prisma, account_id: str):
-    rows = await db.notification_preference.find_many(where={"accountId": account_id})
+    rows = await db.notificationpreference.find_many(where={"accountId": account_id})
     categories = await db.category.find_many(
         where={"accountId": account_id}, order_by={"sortOrder": "asc"}
     )

@@ -57,7 +57,7 @@ async def delete_deadline(db: Prisma, session: Session, deadline_id: str) -> Non
 
 async def list_action_items(db: Prisma, account_id: str) -> list[ActionItem]:
     """List open action items for the account, newest first."""
-    rows = await db.action_item.find_many(
+    rows = await db.actionitem.find_many(
         where={"accountId": account_id, "status": "open"},
         order_by={"createdAt": "desc"},
     )
@@ -68,31 +68,31 @@ async def update_action_item(
     db: Prisma, session: Session, action_item_id: str, new_status: str | None
 ) -> None:
     """Patch an action item's status + audit event."""
-    row = await db.action_item.find_first(
+    row = await db.actionitem.find_first(
         where={"id": action_item_id, "accountId": session.account_id}
     )
     if row is None:
         raise NotFound("Action item not found")
     if new_status:
-        await db.action_item.update(where={"id": action_item_id}, data={"status": new_status})
+        await db.actionitem.update(where={"id": action_item_id}, data={"status": new_status})
         await _audit(db, session, "ACTION_ITEM_STATUS_CHANGED", "action_item",
                      action_item_id, {"from": row.status, "to": new_status})
 
 
 async def delete_action_item(db: Prisma, session: Session, action_item_id: str) -> None:
     """Delete an action item (account-scoped, 404 otherwise). Mirrors Next.js."""
-    row = await db.action_item.find_first(
+    row = await db.actionitem.find_first(
         where={"id": action_item_id, "accountId": session.account_id}
     )
     if row is None:
         raise NotFound("Action item not found")
-    await db.action_item.delete(where={"id": action_item_id})
+    await db.actionitem.delete(where={"id": action_item_id})
 
 
 async def _audit(db: Prisma, session: Session, event_type: str, target_type: str,
                  target_id: str, meta: dict) -> None:
     """Persist an audit event for a deadlines-domain write."""
-    await db.audit_event.create(data={
+    await db.auditevent.create(data={
         "userId": session.user_id, "accountId": session.account_id,
         "eventType": event_type, "targetType": target_type, "targetId": target_id,
         "sourceSurface": "ui", "metadata": json.dumps(meta)})

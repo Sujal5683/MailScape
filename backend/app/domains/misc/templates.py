@@ -37,7 +37,7 @@ async def list_templates(db: Prisma, account_id: str, category: str | None = Non
         if category not in ALLOWED_TEMPLATE_CATEGORIES:
             raise ValidationFailed(f"Invalid category: {category}")
         where["category"] = category
-    rows = await db.email_template.find_many(where=where, order_by={"updatedAt": "desc"})
+    rows = await db.emailtemplate.find_many(where=where, order_by={"updatedAt": "desc"})
     return [map_template(r) for r in rows]
 
 
@@ -45,7 +45,7 @@ async def create_template(db: Prisma, session: Session, body: EmailTemplateCreat
     """Persist a new template + TEMPLATE_CREATED audit event."""
     name = _validate_name(body.name)
     category = coerce_category(body.category)
-    row = await db.email_template.create(
+    row = await db.emailtemplate.create(
         data={"accountId": session.account_id, "name": name,
               "subject": body.subject, "body": body.body, "category": category}
     )
@@ -54,7 +54,7 @@ async def create_template(db: Prisma, session: Session, body: EmailTemplateCreat
 
 
 async def _owned(db: Prisma, account_id: str, template_id: str):
-    row = await db.email_template.find_first(where={"id": template_id, "accountId": account_id})
+    row = await db.emailtemplate.find_first(where={"id": template_id, "accountId": account_id})
     if row is None:
         raise NotFound("Template not found")
     return row
@@ -74,7 +74,7 @@ async def update_template(db: Prisma, session: Session, template_id: str, body: 
         data["category"] = coerce_category(body.category)
     if not data:
         raise ValidationFailed("No fields supplied for update")
-    row = await db.email_template.update(where={"id": template_id}, data=data)
+    row = await db.emailtemplate.update(where={"id": template_id}, data=data)
     await _audit(db, session, "TEMPLATE_UPDATED", template_id, data)
     return map_template(row)
 
@@ -82,13 +82,13 @@ async def update_template(db: Prisma, session: Session, template_id: str, body: 
 async def delete_template(db: Prisma, session: Session, template_id: str) -> None:
     """Delete a template + TEMPLATE_DELETED audit event (404 if missing)."""
     row = await _owned(db, session.account_id, template_id)
-    await db.email_template.delete(where={"id": row.id})
+    await db.emailtemplate.delete(where={"id": row.id})
     await _audit(db, session, "TEMPLATE_DELETED", row.id, {"name": row.name, "category": row.category})
 
 
 async def _audit(db: Prisma, session: Session, event_type: str, target_id: str, meta: dict) -> None:
     """Persist an audit event for a template-domain write."""
-    await db.audit_event.create(data={
+    await db.auditevent.create(data={
         "userId": session.user_id, "accountId": session.account_id,
         "eventType": event_type, "targetType": "email_template",
         "targetId": target_id, "sourceSurface": "ui", "metadata": json.dumps(meta)})
