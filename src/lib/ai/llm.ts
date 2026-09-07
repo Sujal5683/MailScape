@@ -13,7 +13,24 @@ import {
 // Re-export so consumers that import from llm.ts still work.
 export { GEMINI_MODELS, DEFAULT_MODEL_ID, type GeminiModelInfo }
 
+// ---------------------------------------------------------------------------
+// Singleton client
+// ---------------------------------------------------------------------------
+
+let _client: GoogleGenAI | null = null
+
+function getClient(): GoogleGenAI {
+  if (!_client) {
+    const apiKey = process.env.GEMINI_API_KEY
+    if (!apiKey) throw new Error('GEMINI_API_KEY is not set')
+    _client = new GoogleGenAI({ apiKey })
+  }
+  return _client
+}
+
+// ---------------------------------------------------------------------------
 // Rate-limit / unavailable error codes that trigger fallback.
+// ---------------------------------------------------------------------------
 const FALLBACK_TRIGGERS = new Set([429, 503, 500, 503])
 function isFallbackError(err: unknown): boolean {
   if (err instanceof Error) {
