@@ -27,12 +27,15 @@ import {
   Archive,
   CalendarClock,
   Inbox as InboxIcon,
+  ChevronDown,
+  Cpu,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { GEMINI_MODELS, DEFAULT_MODEL_ID } from '@/lib/ai/llm'
 import {
   Sheet,
   SheetContent,
@@ -131,6 +134,60 @@ const MODE_OPTIONS: {
 ]
 
 const CHAR_COUNT_THRESHOLD = 500
+
+// ---------------------------------------------------------------------------
+// Model selector dropdown
+// ---------------------------------------------------------------------------
+
+function ModelSelector({
+  modelId,
+  onChange,
+}: {
+  modelId: string
+  onChange: (id: string) => void
+}) {
+  const current = GEMINI_MODELS.find((m) => m.id === modelId) ?? GEMINI_MODELS[0]
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          aria-label="Select AI model"
+        >
+          <Cpu className="h-3 w-3" />
+          <span className="hidden sm:inline max-w-[110px] truncate">{current.name}</span>
+          <ChevronDown className="h-3 w-3" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-64">
+        <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          AI Model
+        </div>
+        <DropdownMenuSeparator />
+        {GEMINI_MODELS.map((m) => (
+          <DropdownMenuItem
+            key={m.id}
+            onSelect={() => onChange(m.id)}
+            className="flex flex-col items-start gap-0.5 py-2"
+          >
+            <div className="flex w-full items-center gap-2">
+              <span className="flex-1 text-sm font-medium">{m.name}</span>
+              {m.id === modelId && (
+                <Badge variant="secondary" className="px-1.5 py-0 text-[9px]">Active</Badge>
+              )}
+            </div>
+            <span className="text-[10px] text-muted-foreground">{m.description}</span>
+          </DropdownMenuItem>
+        ))}
+        <DropdownMenuSeparator />
+        <div className="px-2 py-1.5 text-[9px] text-muted-foreground">
+          Falls back automatically if rate-limited
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
 
 // Minimal type for the Web Speech API (feature-detected at runtime)
 type SpeechRecognitionLike = {
@@ -359,52 +416,47 @@ function ThinkingIndicator() {
 }
 
 // ---------------------------------------------------------------------------
-// Welcome / empty state (v2)
+// Welcome / empty state — compact inline version (chat input always visible)
 // ---------------------------------------------------------------------------
 
 function WelcomeCard({ onPick }: { onPick: (prompt: string) => void }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center p-6">
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-xl"
-      >
-        <div className="mb-4 flex items-center justify-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-            <Sparkles className="h-7 w-7" />
-          </div>
-        </div>
-        <h2 className="text-center text-xl font-semibold">AI Assistant</h2>
-        <p className="mt-1 text-center text-sm text-muted-foreground">
-          Your Gmail command center. Ask anything, take actions, and let the
-          assistant keep your inbox organized.
-        </p>
-        <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {SUGGESTED_PROMPTS.map((p) => {
-            const Icon = p.icon
-            return (
-              <button
-                key={p.label}
-                type="button"
-                onClick={() => onPick(p.label)}
-                className="group flex items-start gap-3 rounded-lg border border-border bg-card p-3.5 text-left transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-sm"
-              >
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-                  <Icon className="h-4 w-4" />
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="flex flex-col items-center px-4 pt-8 pb-4"
+    >
+      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary mb-3">
+        <Sparkles className="h-6 w-6" />
+      </div>
+      <h2 className="text-center text-lg font-semibold">AI Assistant</h2>
+      <p className="mt-1 text-center text-xs text-muted-foreground max-w-sm">
+        Ask anything, take actions, and let the assistant keep your inbox organized.
+      </p>
+      <div className="mt-4 grid w-full max-w-lg grid-cols-1 gap-2 sm:grid-cols-2">
+        {SUGGESTED_PROMPTS.map((p) => {
+          const Icon = p.icon
+          return (
+            <button
+              key={p.label}
+              type="button"
+              onClick={() => onPick(p.label)}
+              className="group flex items-start gap-2.5 rounded-lg border border-border bg-card p-3 text-left transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-sm"
+            >
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                <Icon className="h-3.5 w-3.5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-xs font-medium leading-snug">{p.label}</div>
+                <div className="mt-0.5 text-[10px] text-muted-foreground leading-snug">
+                  {p.description}
                 </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium">{p.label}</div>
-                  <div className="mt-0.5 text-xs text-muted-foreground">
-                    {p.description}
-                  </div>
-                </div>
-              </button>
-            )
-          })}
-        </div>
-      </motion.div>
-    </div>
+              </div>
+            </button>
+          )
+        })}
+      </div>
+    </motion.div>
   )
 }
 
@@ -628,8 +680,9 @@ export function AssistantView() {
     sendMessage.isPending,
   )
 
-  // Mode + speaker
+  // Mode + speaker + model
   const [mode, setMode] = React.useState<Mode>('direct')
+  const [selectedModel, setSelectedModel] = React.useState<string>(DEFAULT_MODEL_ID)
   const [syncedFor, setSyncedFor] = React.useState<string | null>(null)
   const [speakerMode, setSpeakerMode] = React.useState(false)
 
@@ -769,6 +822,7 @@ export function AssistantView() {
         conversationId: conv.id,
         content: prompt,
         mode: 'direct',
+        model: selectedModel,
       })
     } catch {
       toast({
@@ -783,14 +837,27 @@ export function AssistantView() {
     confirmedActionId?: string,
   ) {
     const content = (contentOverride ?? input).trim()
-    if (!content || !activeId) return
+    if (!content) return
+    // If no active conversation, create one first.
+    let convId = activeId
+    if (!convId) {
+      try {
+        const conv = await createConversation.mutateAsync({ mode })
+        setActiveId(conv.id)
+        convId = conv.id
+      } catch {
+        toast({ title: 'Failed to create conversation', description: 'Please try again.' })
+        return
+      }
+    }
     setInput('')
     setAttachments([])
     try {
       await sendMessage.mutateAsync({
-        conversationId: activeId,
+        conversationId: convId,
         content,
         mode,
+        model: selectedModel,
         ...(confirmedActionId ? { confirmedActionId } : {}),
       })
     } catch {
@@ -992,6 +1059,7 @@ export function AssistantView() {
                 </p>
               </div>
               <ModeSelector mode={mode} onChange={setMode} />
+              <ModelSelector modelId={selectedModel} onChange={setSelectedModel} />
               <Tooltip delayDuration={300}>
                 <TooltipTrigger asChild>
                   <Button
@@ -1237,7 +1305,48 @@ export function AssistantView() {
             />
           </>
         ) : (
-          <WelcomeCard onPick={handlePickPrompt} />
+          // No active conversation — show welcome card + always-visible input
+          <div className="flex h-full flex-col">
+            <div className="flex-1 overflow-y-auto">
+              <WelcomeCard onPick={handlePickPrompt} />
+            </div>
+            {/* Persistent input bar — works even with no conversation */}
+            <div className="border-t border-border p-3">
+              <div className="flex items-end gap-2">
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <Textarea
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault()
+                        void handleSend()
+                      }
+                    }}
+                    placeholder="Ask anything… (Enter to send, Shift+Enter for newline)"
+                    rows={1}
+                    className="min-h-[40px] max-h-32 resize-none"
+                    aria-label="Message input"
+                  />
+                  <div className="mt-1 flex h-4 items-center gap-2 text-[10px] text-muted-foreground">
+                    <span>Enter to send · Shift+Enter for newline</span>
+                    <span className="ml-auto">
+                      <ModelSelector modelId={selectedModel} onChange={setSelectedModel} />
+                    </span>
+                  </div>
+                </div>
+                <Button
+                  size="icon"
+                  className="h-9 w-9 shrink-0"
+                  onClick={() => void handleSend()}
+                  disabled={!input.trim() || sendMessage.isPending || createConversation.isPending}
+                  aria-label="Send message"
+                >
+                  <Send className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
         )}
       </main>
         }

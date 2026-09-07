@@ -457,8 +457,8 @@ export function useConversationActions(conversationId: string | null) {
 export function useSendMessage() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ conversationId, content, mode, confirmedActionId }: { conversationId: string; content: string; mode?: AssistantMode; confirmedActionId?: string }) =>
-      api.assistant.sendMessage(conversationId, { content, mode, ...(confirmedActionId ? { confirmedActionId } : {}) }),
+    mutationFn: ({ conversationId, content, mode, confirmedActionId, model }: { conversationId: string; content: string; mode?: AssistantMode; confirmedActionId?: string; model?: string }) =>
+      api.assistant.sendMessage(conversationId, { content, mode, ...(confirmedActionId ? { confirmedActionId } : {}), ...(model ? { model } : {}) }),
     onSuccess: (_d, { conversationId }) => {
       qc.invalidateQueries({ queryKey: qk.assistantMessages(conversationId) })
       qc.invalidateQueries({ queryKey: qk.assistantActions(conversationId) })

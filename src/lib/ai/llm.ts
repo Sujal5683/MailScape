@@ -1,6 +1,7 @@
 // LLM wrapper using Google Gemini API (@google/genai SDK).
 // Backend-only — credentials never reach the client bundle.
 // Uses GEMINI_API_KEY from environment.
+// Features automatic fallback through the model chain when rate-limited or unavailable.
 
 import { GoogleGenAI } from '@google/genai'
 
@@ -19,9 +20,63 @@ function getClient(): GoogleGenAI {
   return _client
 }
 
-// Model to use — gemini-2.0-flash is fast and cost-effective for structured tasks.
-// Upgrade to gemini-2.5-pro for complex reasoning if needed.
-const DEFAULT_MODEL = 'gemini-2.0-flash'
+// ---------------------------------------------------------------------------
+// Model registry — ordered fallback chain (fastest/newest → smaller/lite)
+// ---------------------------------------------------------------------------
+
+export interface GeminiModelInfo {
+  id: string
+  name: string        // Human-readable name shown in UI
+  description: string
+}
+
+export const GEMINI_MODELS: GeminiModelInfo[] = [
+  {
+    id: 'gemini-2.0-flash',
+    name: 'Gemini 2.0 Flash',
+    description: 'Fastest, most capable — great for all tasks',
+  },
+  {
+    id: 'gemini-1.5-flash',
+    name: 'Gemini 1.5 Flash',
+    description: 'Highly capable, efficient for complex tasks',
+  },
+  {
+    id: 'gemini-1.5-flash-latest',
+    name: 'Gemini 1.5 Flash (Latest)',
+    description: 'Latest 1.5 Flash snapshot with recent improvements',
+  },
+  {
+    id: 'gemini-1.5-flash-8b',
+    name: 'Gemini 1.5 Flash Lite',
+    description: 'Lightweight, very fast — ideal for simple queries',
+  },
+  {
+    id: 'gemini-1.0-pro',
+    name: 'Gemini 1.0 Pro',
+    description: 'Stable baseline model for text generation',
+  },
+]
+
+// The default model to use when none is specified.
+export const DEFAULT_MODEL_ID = GEMINI_MODELS[0].id
+
+// Rate-limit / unavailable error codes that trigger fallback.
+const FALLBACK_TRIGGERS = new Set([429, 503, 500, 503])
+function isFallbackError(err: unknown): boolean {
+  if (err instanceof Error) {
+    const msg = err.message.toLowerCase()
+    return (
+      msg.includes('429') ||
+      msg.includes('rate') ||
+      msg.includes('quota') ||
+      msg.includes('503') ||
+      msg.includes('overloaded') ||
+      msg.includes('unavailable')
+    )
+  }
+  return false
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -32,33 +87,35 @@ export interface ChatTurn {
   content: string
 }
 
+export interface ChatOptions {
+  thinking?: boolean
+  model?: string   // If provided, tries this model first then falls back
+}
+
 // ---------------------------------------------------------------------------
-// chat() — plain text completion
+// Internal: single-model attempt
 // ---------------------------------------------------------------------------
 
-export async function chat(
+async function attemptChat(
+  modelId: string,
   messages: ChatTurn[],
-  opts?: { thinking?: boolean; model?: string },
+  opts?: ChatOptions,
 ): Promise<string> {
   const ai = getClient()
-  const model = opts?.model ?? DEFAULT_MODEL
 
-  // Separate the system prompt from the conversation turns.
   const systemTurn = messages.find((m) => m.role === 'system')
   const conversationTurns = messages.filter((m) => m.role !== 'system')
 
-  // Map our ChatTurn format → Gemini content format.
   const contents = conversationTurns.map((m) => ({
-    role: m.role === 'assistant' ? 'model' : 'user',
+    role: m.role === 'assistant' ? ('model' as const) : ('user' as const),
     parts: [{ text: m.content }],
   }))
 
   const response = await ai.models.generateContent({
-    model,
+    model: modelId,
     contents,
     config: {
       ...(systemTurn ? { systemInstruction: systemTurn.content } : {}),
-      // Enable thinking for complex reasoning tasks.
       ...(opts?.thinking
         ? { thinkingConfig: { thinkingBudget: 1024 } }
         : {}),
@@ -69,12 +126,47 @@ export async function chat(
 }
 
 // ---------------------------------------------------------------------------
+// chat() — plain text completion with automatic fallback
+// ---------------------------------------------------------------------------
+
+export async function chat(messages: ChatTurn[], opts?: ChatOptions): Promise<string> {
+  // Build the model attempt order:
+  // 1. User-specified model (if any) goes first
+  // 2. Then the rest of the fallback chain in order
+  const preferredId = opts?.model ?? DEFAULT_MODEL_ID
+  const chain = [
+    preferredId,
+    ...GEMINI_MODELS.map((m) => m.id).filter((id) => id !== preferredId),
+  ]
+
+  let lastError: unknown
+  for (const modelId of chain) {
+    try {
+      const result = await attemptChat(modelId, messages, opts)
+      return result
+    } catch (err) {
+      lastError = err
+      if (isFallbackError(err)) {
+        // Rate limited or unavailable — try next model
+        console.warn(`[llm] Model ${modelId} unavailable, falling back…`, err)
+        continue
+      }
+      // Non-rate-limit error (bad request, auth, etc.) — don't retry
+      throw err
+    }
+  }
+
+  // All models exhausted
+  throw lastError ?? new Error('All Gemini models exhausted')
+}
+
+// ---------------------------------------------------------------------------
 // chatJson<T>() — JSON-mode completion
 // ---------------------------------------------------------------------------
 
 export async function chatJson<T = unknown>(
   messages: ChatTurn[],
-  opts?: { thinking?: boolean },
+  opts?: ChatOptions,
 ): Promise<T> {
   const text = await chat(messages, opts)
   return extractJson<T>(text)
@@ -86,9 +178,7 @@ export async function chatJson<T = unknown>(
 
 export function extractJson<T>(text: string): T {
   // 1. Try direct parse.
-  try {
-    return JSON.parse(text) as T
-  } catch { /* continue */ }
+  try { return JSON.parse(text) as T } catch { /* continue */ }
 
   // 2. Try fenced ```json block.
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
@@ -118,7 +208,6 @@ export function extractJson<T>(text: string): T {
 export async function describeImage(imageBase64: string, prompt: string): Promise<string> {
   const ai = getClient()
 
-  // Strip the data URI prefix if present.
   const base64Data = imageBase64.startsWith('data:')
     ? imageBase64.split(',')[1]
     : imageBase64
@@ -129,18 +218,27 @@ export async function describeImage(imageBase64: string, prompt: string): Promis
     ? 'image/jpeg'
     : 'image/png'
 
-  const response = await ai.models.generateContent({
-    model: 'gemini-2.0-flash',
-    contents: [
-      {
-        role: 'user',
-        parts: [
-          { text: prompt },
-          { inlineData: { mimeType, data: base64Data } },
+  // Vision — use flash with fallback
+  for (const modelId of GEMINI_MODELS.map((m) => m.id)) {
+    try {
+      const response = await ai.models.generateContent({
+        model: modelId,
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              { text: prompt },
+              { inlineData: { mimeType, data: base64Data } },
+            ],
+          },
         ],
-      },
-    ],
-  })
+      })
+      return response.text ?? ''
+    } catch (err) {
+      if (isFallbackError(err)) continue
+      throw err
+    }
+  }
 
-  return response.text ?? ''
+  throw new Error('All Gemini models exhausted for vision')
 }

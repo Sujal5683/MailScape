@@ -54,6 +54,7 @@ export interface OrchestratorInput {
   mode: AssistantMode
   history: { role: 'user' | 'assistant'; content: string }[]
   confirmedActionId?: string
+  model?: string   // Preferred Gemini model ID; falls back automatically if rate-limited
 }
 
 export interface OrchestratorOutput {
@@ -93,7 +94,7 @@ export async function runAssistant(input: OrchestratorInput): Promise<Orchestrat
     : 'No directly matching emails found in local index.'
 
   // 2. LLM plan.
-  const plan = await getPlan(input, contextBlock)
+  const plan = await getPlan(input, contextBlock, input.model)
 
   // 3. Execute proposed actions through the permission layer.
   const actions: OrchestratorOutput['actions'] = []
@@ -242,7 +243,7 @@ async function retrieveContext(keywords: string[], accountId: string) {
   return emails.map(mapEmailToList)
 }
 
-async function getPlan(input: OrchestratorInput, contextBlock: string): Promise<PlanResponse> {
+async function getPlan(input: OrchestratorInput, contextBlock: string, model?: string): Promise<PlanResponse> {
   const messages = [
     { role: 'system' as const, content: SYSTEM_PROMPT },
     { role: 'system' as const, content: `Current mode: ${input.mode}. User account: institutional Gmail.` },
@@ -265,7 +266,7 @@ Rules:
     },
   ]
   try {
-    const text = await chat(messages, { thinking: input.mode === 'thinking' })
+    const text = await chat(messages, { thinking: input.mode === 'thinking', model })
     const plan = safeParse<PlanResponse>(text)
     return plan ?? fallbackPlan(input.userMessage)
   } catch {

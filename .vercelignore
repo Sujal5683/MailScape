@@ -1,0 +1,5 @@
+backend/
+mini-services/
+tests/
+docker-compose.yml
+.zscripts/

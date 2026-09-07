@@ -43,7 +43,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const conv = await db.assistantConversation.findFirst({ where: { id, userId: session.userId } })
   if (!conv) throw notFound('Conversation not found')
 
-  const body = await readBody<{ content: string; mode?: AssistantMode; confirmedActionId?: string }>(req)
+  const body = await readBody<{ content: string; mode?: AssistantMode; confirmedActionId?: string; model?: string }>(req)
 
   // Persist user message.
   const userMsg = await db.assistantMessage.create({
@@ -82,6 +82,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     mode: body.mode ?? (conv.mode as AssistantMode),
     history,
     confirmedActionId: body.confirmedActionId,
+    model: body.model,
   })
 
   // Persist assistant message.
