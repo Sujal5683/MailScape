@@ -8,9 +8,9 @@
     "build:windows": "next build && xcopy /E /I /Y .next\\static .next\\standalone\\.next\\static && xcopy /E /I /Y public .next\\standalone\\public",
     "start": "NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log",
     "lint": "eslint .",
-    "postinstall": "prisma generate",
+    "postinstall": "prisma generate --generator client",
     "db:push": "prisma db push --accept-data-loss",
-    "db:generate": "prisma generate",
+    "db:generate": "prisma generate --generator client",
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset"
   },
