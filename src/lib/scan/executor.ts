@@ -9,9 +9,7 @@
 // the discovery source is stubbed.
 
 import { db } from '@/lib/db'
-import { SEED_EMAILS } from '@/lib/sync/seed-data'
-import { CONVERSATION_SEED_EMAILS } from '@/lib/conversations/seed-data'
-import { ingestEmail } from '@/lib/sync/seed'
+import { ingestEmail, type RawEmail } from '@/lib/sync/seed'
 import { matchesConfig } from './mappers'
 import { resolveConversationForEmail } from './conv-resolver'
 import type { ScanConfig } from './types'
@@ -27,7 +25,7 @@ export async function executeScanJob(jobId: string): Promise<void> {
     data: { status: 'scanning', startedAt: new Date(), progress: JSON.stringify({ phase: 'discovering', current: 0 }) },
   })
   try {
-    const candidates = [...SEED_EMAILS, ...CONVERSATION_SEED_EMAILS].filter((r) => matchesConfig(r, cfg))
+    const candidates: RawEmail[] = [] // Dummy data removed
     await setProgress(jobId, 'fetching', 0, candidates.length)
     const existing = await db.email.findMany({ where: { accountId }, select: { providerMessageId: true } })
     const existingIds = new Set(existing.map((e) => e.providerMessageId))

@@ -7,8 +7,7 @@
 
 import { google } from 'googleapis'
 import { db } from '@/lib/db'
-import { ingestEmail } from '@/lib/sync/seed'
-import type { RawEmail } from '@/lib/sync/seed-data'
+import { ingestEmail, type RawEmail } from '@/lib/sync/seed'
 
 const DEFAULT_CATEGORIES = [
   { name: 'Placement', description: 'Internships, placements, career development', icon: 'briefcase', color: 'amber', sortOrder: 1 },

@@ -23,6 +23,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { useUpdateSyncInterval } from '@/hooks/use-queries'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,7 +37,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { SettingsSection } from './section-wrapper'
-import { ScanSyncSettings } from '@/features/scan/scan-sync-settings'
+import { useScanDialogStore } from '@/features/scan/scan-dialog-store'
 
 function StatusBadge({ status }: { status: string }) {
   const s = (status || '').toLowerCase()
@@ -77,7 +79,9 @@ function AccountRow({ account }: { account: AccountConnectionDTO }) {
   const syncMutation = useSyncAccount()
   const qc = useQueryClient()
   const { toast } = useToast()
+  const openScan = useScanDialogStore((s) => s.openDialog)
   const [removeOpen, setRemoveOpen] = React.useState(false)
+  const updateIntervalMutation = useUpdateSyncInterval()
 
   const removeMutation = useMutation({
     mutationFn: () => api.accounts.remove(account.id),
@@ -149,7 +153,42 @@ function AccountRow({ account }: { account: AccountConnectionDTO }) {
 
       <Separator className="bg-border" />
 
+      <div className="flex flex-wrap items-center gap-4 text-sm">
+        <div className="flex items-center gap-2">
+          <span className="text-muted-foreground font-medium">Auto-scan interval:</span>
+          <Select 
+            defaultValue={(account.syncState as any)?.autoSyncInterval || 'instantly'}
+            onValueChange={(val) => {
+              updateIntervalMutation.mutate({ accountId: account.id, autoSyncInterval: val })
+              toast({ title: 'Interval updated' })
+            }}
+          >
+            <SelectTrigger className="w-[140px] h-8">
+              <SelectValue placeholder="Select interval" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="instantly">Instantly</SelectItem>
+              <SelectItem value="15m">Every 15 mins</SelectItem>
+              <SelectItem value="1h">Every 1 hour</SelectItem>
+              <SelectItem value="daily">Daily</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <Separator className="bg-border" />
+
       <div className="flex flex-wrap items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={openScan}
+          disabled={isSyncing}
+          className="gap-2"
+        >
+          <RefreshCw className="size-3.5" aria-hidden />
+          Scan Gmail
+        </Button>
         <Button
           variant="outline"
           size="sm"
@@ -289,11 +328,6 @@ export function AccountsSection() {
           ))}
         </ul>
       )}
-
-      {/* Scan & sync controls — auto-sync toggle, Sync now, scan history.
-          Rendered below the accounts list so scan settings live alongside
-          the accounts they apply to. */}
-      <ScanSyncSettings />
     </SettingsSection>
   )
 }

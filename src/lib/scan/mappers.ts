@@ -11,7 +11,7 @@ import type {
   SyncStatusDTO,
 } from './types'
 import { DEFAULT_SCAN_PROCESSING } from './types'
-import type { RawEmail } from '@/lib/sync/seed-data'
+import type { RawEmail } from '@/lib/sync/seed'
 
 /** Parse a JSON column defensively — never throws, falls back to the empty object. */
 function parseJSON<T>(raw: string | null | undefined, fallback: T): T {

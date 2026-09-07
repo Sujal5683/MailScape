@@ -6,11 +6,31 @@
 // the app now uses real Google OAuth and the Gmail API for email ingestion.
 
 import { db } from '@/lib/db'
-import type { RawEmail } from '@/lib/sync/seed-data'
 import { resolveConversation, assignThreadToConversation, detectFollowUpState } from '@/lib/conversations/resolver'
 import { classifyByEmail, extractDeadlines, extractActionItems } from '@/lib/classifier'
 import { sanitizeHtml, htmlToText, makeSnippet, extractUrls } from '@/lib/sanitize'
 import type { CategorySummary } from '@/lib/types'
+
+export interface RawEmail {
+  providerMessageId: string
+  providerThreadId: string
+  fromName: string
+  fromEmail: string
+  toRecipients: { name?: string; email: string }[]
+  ccRecipients?: { name?: string; email: string }[]
+  subject: string
+  bodyText: string
+  bodyHtml: string
+  receivedAt: string // ISO
+  isRead: boolean
+  isStarred: boolean
+  isImportant: boolean
+  isDraft?: boolean
+  isSent?: boolean
+  isSpam?: boolean
+  labels?: string[]
+  attachments?: { filename: string; mimeType: string; size: number }[]
+}
 
 
 

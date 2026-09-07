@@ -1089,3 +1089,15 @@ export function useResumeSync() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['sync', 'status'] }),
   })
 }
+
+export function useUpdateSyncInterval() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ accountId, autoSyncInterval }: { accountId: string; autoSyncInterval: string }) => 
+      scanReq<{ ok: boolean }>('/api/sync/interval', { 
+        method: 'POST', 
+        body: JSON.stringify({ accountId, autoSyncInterval }) 
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.accounts }),
+  })
+}

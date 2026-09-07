@@ -65,7 +65,8 @@ model SyncState {
   syncStatus     String            @default("idle")
   errorCode      String?
   errorMessage   String?
-  retryCount     Int               @default(0)
+  retryCount       Int               @default(0)
+  autoSyncInterval String            @default("instantly")
   updatedAt      DateTime          @updatedAt
   account        AccountConnection @relation(fields: [accountId], references: [id], onDelete: Cascade)
 }
