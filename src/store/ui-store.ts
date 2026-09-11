@@ -53,6 +53,8 @@ interface UIState {
   contextSearchQuery: string | null
   // One-shot prefill consumed by ComposeForm when the drawer opens.
   composePrefill: ComposePrefill | null
+  // Active account for multi-inbox support. null = use first available account.
+  activeAccountId: string | null
   setView: (v: ViewKey) => void
   toggleSidebar: () => void
   setMobileNav: (open: boolean) => void
@@ -64,6 +66,7 @@ interface UIState {
   setContext: (ctx: Partial<Pick<UIState, 'contextCategoryId' | 'contextSenderId' | 'contextEmailId' | 'contextSearchQuery'>>) => void
   navigate: (view: ViewKey, ctx?: Partial<Pick<UIState, 'contextCategoryId' | 'contextSenderId' | 'contextEmailId' | 'contextSearchQuery'>>) => void
   setComposePrefill: (prefill: ComposePrefill | null) => void
+  setActiveAccountId: (id: string | null) => void
 }
 
 export const useUIStore = create<UIState>()(
@@ -82,6 +85,7 @@ export const useUIStore = create<UIState>()(
       contextEmailId: null,
       contextSearchQuery: null,
       composePrefill: null,
+      activeAccountId: null,
       setView: (v) => set({ activeView: v, mobileNavOpen: false }),
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
       setMobileNav: (open) => set({ mobileNavOpen: open }),
@@ -102,6 +106,7 @@ export const useUIStore = create<UIState>()(
           ...ctx,
         }),
       setComposePrefill: (prefill) => set({ composePrefill: prefill }),
+      setActiveAccountId: (id) => set({ activeAccountId: id }),
     }),
     {
       name: 'iei-ui-store',
@@ -109,6 +114,7 @@ export const useUIStore = create<UIState>()(
         activeView: s.activeView,
         sidebarCollapsed: s.sidebarCollapsed,
         onboardingComplete: s.onboardingComplete,
+        activeAccountId: s.activeAccountId,
       }),
     },
   ),

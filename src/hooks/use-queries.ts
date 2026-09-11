@@ -1090,14 +1090,27 @@ export function useResumeSync() {
   })
 }
 
+/** Read the user-level global auto-sync interval. */
+export function useGlobalSyncInterval() {
+  return useQuery({
+    queryKey: ['user', 'sync-interval'],
+    queryFn: () => scanReq<{ autoSyncInterval: string }>('/api/user/sync-interval'),
+    staleTime: 60_000,
+  })
+}
+
+/** Update the user-level global auto-sync interval. */
 export function useUpdateSyncInterval() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ accountId, autoSyncInterval }: { accountId: string; autoSyncInterval: string }) => 
-      scanReq<{ ok: boolean }>('/api/sync/interval', { 
-        method: 'POST', 
-        body: JSON.stringify({ accountId, autoSyncInterval }) 
+    mutationFn: ({ autoSyncInterval }: { autoSyncInterval: string; accountId?: string }) =>
+      scanReq<{ ok: boolean; autoSyncInterval: string }>('/api/user/sync-interval', {
+        method: 'PATCH',
+        body: JSON.stringify({ autoSyncInterval }),
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.accounts }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['user', 'sync-interval'] })
+      qc.invalidateQueries({ queryKey: qk.accounts })
+    },
   })
 }

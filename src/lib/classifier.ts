@@ -22,38 +22,61 @@ export interface ClassifyResult {
   rationale: string
 }
 
-// Institutional category heuristics — deterministic sender/keyword mapping.
-// This emulates "trusted sender rules" + "discovered sender rules" deterministically.
+// ── Institutional sender heuristics (IIT / university domains) ────────────────
 const SENDER_HEURISTICS: { match: (i: ClassifyInput) => boolean; category: string; confidence: number }[] = [
-  { match: (i) => i.fromEmail.includes('placement') || i.fromEmail.includes('cdc'), category: 'Placement', confidence: 0.98 },
-  { match: (i) => i.fromEmail.includes('academic') || i.fromEmail.includes('registrar') || i.fromEmail.includes('examcell'), category: 'Academic', confidence: 0.97 },
-  { match: (i) => i.domain === 'iitjammu.ac.in' && /@(iitjammu\.ac\.in)/.test(i.fromEmail) && !i.fromEmail.includes('@'), category: 'Professors', confidence: 0.6 },
-  { match: (i) => i.fromEmail.includes('research') || i.fromEmail.includes('library') || i.fromEmail.includes('ieee'), category: 'Research', confidence: 0.95 },
-  { match: (i) => i.fromEmail.includes('swelfare') || i.fromEmail.includes('scholarship') || i.fromEmail.includes('sports'), category: 'Student Welfare', confidence: 0.96 },
-  { match: (i) => i.fromEmail.includes('medical'), category: 'Medical', confidence: 0.99 },
-  { match: (i) => i.fromEmail.includes('hostel') || i.fromEmail.includes('mess'), category: 'Hostel', confidence: 0.97 },
-  { match: (i) => i.fromEmail.includes('cultural') || i.fromEmail.includes('techboard') || i.fromEmail.includes('alumni') || i.fromEmail.includes('events'), category: 'Events', confidence: 0.95 },
-  { match: (i) => i.fromEmail.includes('finance'), category: 'Finance', confidence: 0.99 },
+  { match: (i) => /placement|cdc|career/.test(i.fromEmail),                                     category: 'Placement',     confidence: 0.98 },
+  { match: (i) => /academic|registrar|examcell|examination/.test(i.fromEmail),                  category: 'Academic',      confidence: 0.97 },
+  { match: (i) => /research|library|ieee|publication/.test(i.fromEmail),                        category: 'Research',      confidence: 0.95 },
+  { match: (i) => /swelfare|scholarship|sports|counseling/.test(i.fromEmail),                   category: 'Student Welfare', confidence: 0.96 },
+  { match: (i) => /medical|health|clinic|hospital/.test(i.fromEmail),                           category: 'Medical',       confidence: 0.99 },
+  { match: (i) => /hostel|mess|housing|dormitory/.test(i.fromEmail),                            category: 'Hostel',        confidence: 0.97 },
+  { match: (i) => /cultural|techboard|alumni|events|fest/.test(i.fromEmail),                    category: 'Events',        confidence: 0.95 },
+  { match: (i) => /finance|fees|payment|billing|accounts/.test(i.fromEmail),                    category: 'Finance',       confidence: 0.99 },
+  // ── General (non-institutional) ──────────────────────────────────────────
+  { match: (i) => /hr@|recruit|hiring|offer.*letter|noreply.*linkedin|jobs@|careers@/.test(i.fromEmail), category: 'Work', confidence: 0.93 },
+  { match: (i) => /newsletter|digest|weekly|daily.*update|substack|mailchimp|campaign/.test(i.fromEmail), category: 'Social', confidence: 0.90 },
+  { match: (i) => /noreply@|no-reply@|donotreply@|notification@|alert@|system@/.test(i.fromEmail) &&
+                  !/university|college|iit|nit|institute/.test(i.domain ?? ''),                  category: 'Updates',       confidence: 0.82 },
+  { match: (i) => /invoice|receipt|order.*confirm|payment.*received|transaction/.test(i.fromEmail), category: 'Finance',  confidence: 0.91 },
+  { match: (i) => /twitter|facebook|instagram|linkedin|youtube|reddit|tiktok/.test(i.domain ?? ''), category: 'Social',   confidence: 0.95 },
+  { match: (i) => /github|gitlab|jira|confluence|slack|notion|figma|trello/.test(i.domain ?? ''),   category: 'Work',     confidence: 0.92 },
+  { match: (i) => /amazon|flipkart|swiggy|zomato|ola|uber|paytm|razorpay|stripe/.test(i.domain ?? ''), category: 'Updates', confidence: 0.90 },
 ]
 
+// ── Keyword heuristics (subject + body) ──────────────────────────────────────
 const KEYWORD_HEURISTICS: { keywords: string[]; category: string; confidence: number }[] = [
-  { keywords: ['internship', 'placement', 'pre-placement', 'shortlist', 'company-wise'], category: 'Placement', confidence: 0.78 },
-  { keywords: ['examination', 'mid-sem', 'grade card', 'course registration', 'elective', 're-evaluation'], category: 'Academic', confidence: 0.75 },
-  { keywords: ['project', 'literature review', 'assignment', 'recommendation letter'], category: 'Professors', confidence: 0.7 },
-  { keywords: ['srip', 'research proposal', 'inter-library', 'paper presentation'], category: 'Research', confidence: 0.8 },
-  { keywords: ['counseling', 'mental health', 'scholarship', 'tournament'], category: 'Student Welfare', confidence: 0.8 },
-  { keywords: ['vaccination', 'health check-up', 'medical'], category: 'Medical', confidence: 0.85 },
-  { keywords: ['room allotment', 'mess menu', 'hostel maintenance'], category: 'Hostel', confidence: 0.85 },
-  { keywords: ['cultural fest', 'hackathon', 'alumni talk', 'fest'], category: 'Events', confidence: 0.82 },
-  { keywords: ['fee reminder', 'mess fee', 'hostel fee', 'receipt'], category: 'Finance', confidence: 0.85 },
+  // Institutional
+  { keywords: ['internship', 'placement', 'pre-placement', 'shortlist', 'company-wise', 'ppo', 'ppe'],           category: 'Placement',     confidence: 0.78 },
+  { keywords: ['examination', 'mid-sem', 'end-sem', 'grade card', 'course registration', 'elective', 're-evaluation', 'timetable'], category: 'Academic', confidence: 0.75 },
+  { keywords: ['project', 'literature review', 'assignment', 'recommendation letter', 'thesis', 'dissertation'],  category: 'Professors',    confidence: 0.70 },
+  { keywords: ['srip', 'research proposal', 'inter-library', 'paper presentation', 'conference', 'publication'],  category: 'Research',      confidence: 0.80 },
+  { keywords: ['counseling', 'mental health', 'scholarship', 'tournament', 'sports meet', 'anti-ragging'],        category: 'Student Welfare', confidence: 0.80 },
+  { keywords: ['vaccination', 'health check-up', 'medical checkup', 'health camp', 'infirmary'],                  category: 'Medical',       confidence: 0.85 },
+  { keywords: ['room allotment', 'mess menu', 'hostel maintenance', 'warden', 'hostel fee'],                      category: 'Hostel',        confidence: 0.85 },
+  { keywords: ['cultural fest', 'hackathon', 'alumni talk', 'techfest', 'convocation', 'annual day'],             category: 'Events',        confidence: 0.82 },
+  { keywords: ['fee reminder', 'tuition fee', 'hostel fee', 'receipt', 'challan', 'due date', 'pending payment'], category: 'Finance',       confidence: 0.85 },
+  // General
+  { keywords: ['job offer', 'interview scheduled', 'offer letter', 'joining date', 'salary', 'appraisal', 'performance review'], category: 'Work', confidence: 0.80 },
+  { keywords: ['unsubscribe', 'view in browser', 'this week in', 'monthly newsletter', 'weekly digest'],           category: 'Social',        confidence: 0.78 },
+  { keywords: ['your order', 'order confirmed', 'shipped', 'out for delivery', 'invoice attached', 'payment received'], category: 'Updates', confidence: 0.82 },
+  { keywords: ['otp', 'verification code', 'two-factor', '2fa', 'login attempt', 'password reset'],               category: 'Updates',       confidence: 0.88 },
+  { keywords: ['meeting invite', 'calendar event', 'zoom invite', 'google meet', 'teams meeting'],                 category: 'Work',          confidence: 0.80 },
 ]
 
-// Professor detection: institutional domain + personal-looking email (not a known office).
-const OFFICE_PREFIXES = ['placement', 'academic', 'registrar', 'examcell', 'research', 'library', 'ieee', 'swelfare', 'scholarship', 'sports', 'medical', 'hostel', 'mess', 'cultural', 'techboard', 'alumni', 'finance', 'events', 'dean', 'office', 'no-reply', 'noreply', 'admin', 'support', 'admissions']
+// Office prefixes for institutional professor detection
+const OFFICE_PREFIXES = [
+  'placement', 'academic', 'registrar', 'examcell', 'research', 'library', 'ieee',
+  'swelfare', 'scholarship', 'sports', 'medical', 'hostel', 'mess', 'cultural',
+  'techboard', 'alumni', 'finance', 'events', 'dean', 'office', 'no-reply',
+  'noreply', 'donotreply', 'admin', 'support', 'admissions', 'helpdesk',
+]
+
+// Institutional domain detection (university/college patterns)
+const INSTITUTIONAL_DOMAIN_RE = /\.(ac\.in|edu|edu\.in|ac\.uk|edu\.au)$/
 
 export function classifyByEmail(input: ClassifyInput): ClassifyResult {
   const domain = input.domain ?? ''
-  const isInstitutional = domain === 'iitjammu.ac.in'
+  const isInstitutional = INSTITUTIONAL_DOMAIN_RE.test(domain)
 
   // 1. Trusted sender heuristics (sender_rule).
   for (const h of SENDER_HEURISTICS) {
@@ -81,7 +104,7 @@ export function classifyByEmail(input: ClassifyInput): ClassifyResult {
     }
   }
 
-  // 3. Keyword heuristics on subject + body.
+  // 3. Keyword heuristics on subject + body (lowered threshold → more matches).
   const haystack = `${input.subject ?? ''} ${input.bodyText ?? ''}`.toLowerCase()
   const hits: Record<string, number> = {}
   for (const h of KEYWORD_HEURISTICS) {
@@ -89,7 +112,8 @@ export function classifyByEmail(input: ClassifyInput): ClassifyResult {
     if (score > 0) hits[h.category] = Math.max(hits[h.category] ?? 0, h.confidence * (0.6 + 0.4 * Math.min(score / 2, 1)))
   }
   const best = Object.entries(hits).sort((a, b) => b[1] - a[1])[0]
-  if (best && best[1] >= 0.7) {
+  // Lowered from 0.7 to 0.6 so more keyword matches qualify
+  if (best && best[1] >= 0.6) {
     return {
       categoryName: best[0],
       source: 'system_default',
@@ -98,12 +122,12 @@ export function classifyByEmail(input: ClassifyInput): ClassifyResult {
     }
   }
 
-  // 4. Fallback — Others.
+  // 4. Fallback — Others (low confidence → AI will reclassify asynchronously).
   return {
     categoryName: 'Others',
     source: 'system_default',
-    confidence: 0.5,
-    rationale: 'No deterministic match; routed to Others',
+    confidence: 0.3,  // Low confidence signals AI fallback is needed
+    rationale: 'No deterministic match; routed to Others — AI reclassification pending',
   }
 }
 

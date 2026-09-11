@@ -13,7 +13,7 @@ import {
   RefreshCw,
   Trash2,
 } from 'lucide-react'
-import { useAccounts, useSyncAccount } from '@/hooks/use-queries'
+import { useAccounts, useSyncAccount, useGlobalSyncInterval, useUpdateSyncInterval } from '@/hooks/use-queries'
 import { useToast } from '@/hooks/use-toast'
 import { api } from '@/lib/api-client'
 import { qk } from '@/lib/query-keys'
@@ -24,7 +24,6 @@ import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { useUpdateSyncInterval } from '@/hooks/use-queries'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -38,6 +37,54 @@ import {
 } from '@/components/ui/alert-dialog'
 import { SettingsSection } from './section-wrapper'
 import { useScanDialogStore } from '@/features/scan/scan-dialog-store'
+
+const SYNC_INTERVALS = [
+  { value: 'instantly', label: 'Every minute (fastest)' },
+  { value: '5m',        label: 'Every 5 minutes' },
+  { value: '15m',       label: 'Every 15 minutes' },
+  { value: '30m',       label: 'Every 30 minutes' },
+  { value: '1h',        label: 'Every hour' },
+  { value: '2h',        label: 'Every 2 hours' },
+  { value: '6h',        label: 'Every 6 hours' },
+  { value: 'daily',     label: 'Once a day' },
+]
+
+/**
+ * Global sync-interval row — appears inside each AccountRow.
+ * Reads/writes the user-level interval (applies to ALL accounts).
+ */
+function GlobalSyncIntervalRow() {
+  const { data, isLoading } = useGlobalSyncInterval()
+  const updateMutation = useUpdateSyncInterval()
+  const { toast } = useToast()
+
+  const currentInterval = data?.autoSyncInterval ?? '15m'
+
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      <span className="text-muted-foreground font-medium text-xs">Auto-sync interval (all accounts):</span>
+      <Select
+        value={currentInterval}
+        disabled={isLoading || updateMutation.isPending}
+        onValueChange={(val) => {
+          updateMutation.mutate({ autoSyncInterval: val }, {
+            onSuccess: () => toast({ title: 'Sync interval updated', description: SYNC_INTERVALS.find(i => i.value === val)?.label }),
+            onError: () => toast({ title: 'Failed to update interval', variant: 'destructive' }),
+          })
+        }}
+      >
+        <SelectTrigger className="w-[200px] h-8 text-xs">
+          <SelectValue placeholder="Select interval" />
+        </SelectTrigger>
+        <SelectContent>
+          {SYNC_INTERVALS.map((i) => (
+            <SelectItem key={i.value} value={i.value} className="text-xs">{i.label}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  )
+}
 
 function StatusBadge({ status }: { status: string }) {
   const s = (status || '').toLowerCase()
@@ -81,7 +128,6 @@ function AccountRow({ account }: { account: AccountConnectionDTO }) {
   const { toast } = useToast()
   const openScan = useScanDialogStore((s) => s.openDialog)
   const [removeOpen, setRemoveOpen] = React.useState(false)
-  const updateIntervalMutation = useUpdateSyncInterval()
 
   const removeMutation = useMutation({
     mutationFn: () => api.accounts.remove(account.id),
@@ -154,26 +200,7 @@ function AccountRow({ account }: { account: AccountConnectionDTO }) {
       <Separator className="bg-border" />
 
       <div className="flex flex-wrap items-center gap-4 text-sm">
-        <div className="flex items-center gap-2">
-          <span className="text-muted-foreground font-medium">Auto-scan interval:</span>
-          <Select 
-            defaultValue={(account.syncState as any)?.autoSyncInterval || 'instantly'}
-            onValueChange={(val) => {
-              updateIntervalMutation.mutate({ accountId: account.id, autoSyncInterval: val })
-              toast({ title: 'Interval updated' })
-            }}
-          >
-            <SelectTrigger className="w-[140px] h-8">
-              <SelectValue placeholder="Select interval" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="instantly">Instantly</SelectItem>
-              <SelectItem value="15m">Every 15 mins</SelectItem>
-              <SelectItem value="1h">Every 1 hour</SelectItem>
-              <SelectItem value="daily">Daily</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        <GlobalSyncIntervalRow />
       </div>
 
       <Separator className="bg-border" />

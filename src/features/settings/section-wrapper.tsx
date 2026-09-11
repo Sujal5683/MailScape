@@ -55,10 +55,12 @@ export function InfoNotice({
   icon: Icon,
   tone = 'info',
   children,
+  className,
 }: {
   icon: LucideIcon
   tone?: 'info' | 'success' | 'warning'
   children: React.ReactNode
+  className?: string
 }) {
   const toneCls =
     tone === 'success'
@@ -67,7 +69,7 @@ export function InfoNotice({
         ? 'bg-warning/10 text-warning'
         : 'bg-primary/10 text-primary'
   return (
-    <div className="flex items-start gap-2.5 rounded-lg border border-border bg-accent/40 p-3">
+    <div className={cn('flex items-start gap-2.5 rounded-lg border border-border bg-accent/40 p-3', className)}>
       <Icon className={cn('mt-0.5 size-4 shrink-0', toneCls)} aria-hidden />
       <p className="text-sm text-muted-foreground">{children}</p>
     </div>

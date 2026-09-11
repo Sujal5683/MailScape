@@ -1,20 +1,20 @@
 """Shared FastAPI dependencies.
 
 Provides:
-- ``get_db`` — async Prisma client.
-- ``get_session`` — resolved caller identity + account.
+- ``get_db``         — async Prisma client.
+- ``get_session``    — resolved caller identity + account (JWT-aware).
 - ``get_account_id`` — convenience: just the active account id.
-- ``pagination`` — common cursor + limit pagination query params, returning
-  a :class:`PaginationParams` dataclass.
+- ``pagination``     — common cursor + limit pagination query params.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from fastapi import Depends, Query
+from fastapi import Depends, Header, Query
 from prisma import Prisma
 
-from app.core.security.auth import Session, get_session as _get_session
+from app.core.security.auth import Session
+from app.core.security.auth import get_session as _get_session
 from app.db import get_client
 
 
@@ -27,9 +27,16 @@ async def get_db() -> Prisma:
     return get_client()
 
 
-async def get_session() -> Session:
-    """Resolve the current session (delegates to the security layer)."""
-    return await _get_session()
+async def get_session(
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> Session:
+    """Resolve the current session.
+
+    Reads the ``Authorization: Bearer <token>`` header (if present) and
+    validates it against the Supabase JWT secret. Falls back to the seed
+    demo account when the header is absent or validation fails.
+    """
+    return await _get_session(authorization=authorization)
 
 
 async def get_account_id(session: Session = Depends(get_session)) -> str:

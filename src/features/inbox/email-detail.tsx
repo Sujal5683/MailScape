@@ -221,7 +221,8 @@ function EmailDetailContent({
   const catColorClass = cat ? colorClass(cat.color) : 'cat-slate'
 
   const domain = email.fromEmail.split('@')[1]?.toLowerCase() ?? ''
-  const isInstitutional = domain === 'iitjammu.ac.in'
+  // Institutional = any academic / gov / official domain (not just IIT Jammu)
+  const isInstitutional = /\.(edu|ac\.in|gov\.in|gov|mil|org)$/.test(domain)
 
   const others = (thread?.emails ?? []).filter((m) => m.id !== email.id)
 
@@ -326,7 +327,24 @@ function EmailDetailContent({
           <Separator orientation="vertical" className="mx-1 h-6 hidden sm:block" />
 
           {/* Group 3: external / AI */}
-          <ToolbarButton icon={ExternalLink} label="Open in Gmail" onClick={handleGmailOpen} />
+          <Separator orientation="vertical" className="mx-1 h-6 hidden sm:block" />
+
+          {/* Open in Gmail — prominent colored button in toolbar */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={handleGmailOpen}
+                className="hidden sm:inline-flex h-7 items-center gap-1.5 rounded-md bg-[#EA4335] px-2.5 text-[11px] font-semibold text-white shadow-sm transition-opacity hover:opacity-90 active:scale-95"
+              >
+                <ExternalLink className="h-3 w-3" />
+                Gmail
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Open in Gmail</TooltipContent>
+          </Tooltip>
+          {/* Mobile icon-only Gmail button */}
+          <ToolbarButton icon={ExternalLink} label="Open in Gmail" onClick={handleGmailOpen} className="sm:hidden" />
+
           <ToolbarButton
             icon={Sparkles}
             label="Ask AI"
@@ -697,6 +715,17 @@ function EmailDetailContent({
               </>
             )}
           </p>
+
+          {/* Mobile floating "Open in Gmail" — bottom of reading pane, always visible on small screens */}
+          <div className="mt-6 flex justify-center sm:hidden">
+            <button
+              onClick={handleGmailOpen}
+              className="inline-flex items-center gap-2 rounded-full bg-[#EA4335] px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition-transform active:scale-95 hover:opacity-90"
+            >
+              <ExternalLink className="h-4 w-4" />
+              Open in Gmail
+            </button>
+          </div>
         </div>
       </PaneScroll>
 
@@ -750,6 +779,7 @@ function ToolbarButton({
   active,
   activeClass,
   rotate,
+  className,
 }: {
   icon: LucideIcon
   alternateIcon?: LucideIcon
@@ -758,6 +788,7 @@ function ToolbarButton({
   active?: boolean
   activeClass?: string
   rotate?: boolean
+  className?: string
 }) {
   const Rendered = alternateIcon ?? Icon
   return (
@@ -767,7 +798,7 @@ function ToolbarButton({
           variant="ghost"
           size="sm"
           onClick={onClick}
-          className={cn('h-8 gap-1.5 px-2', active && activeClass)}
+          className={cn('h-8 gap-1.5 px-2', active && activeClass, className)}
           aria-label={label}
           aria-pressed={active}
         >
