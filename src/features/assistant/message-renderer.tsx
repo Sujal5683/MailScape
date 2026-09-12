@@ -279,8 +279,8 @@ function TableBlock({ block }: BlockProps) {
         <Table>
           <TableHeader>
             <TableRow className="sticky top-0 z-10 border-b border-border bg-muted/60 hover:bg-muted/60">
-              {block.columns.map((c) => (
-                <TableHead key={c.key} className="text-xs">
+              {block.columns.map((c, idx) => (
+                <TableHead key={c.key || idx} className="text-xs">
                   {c.label}
                 </TableHead>
               ))}
@@ -305,11 +305,11 @@ function TableBlock({ block }: BlockProps) {
                     i % 2 === 1 && 'bg-muted/30',
                   )}
                 >
-                  {block.columns!.map((c) => {
+                  {block.columns!.map((c, idx) => {
                     const v = row[c.key]
                     return (
                       <TableCell
-                        key={c.key}
+                        key={c.key || idx}
                         className={cn(
                           'py-2 text-xs',
                           isNumericLike(v) && 'tabular-nums',

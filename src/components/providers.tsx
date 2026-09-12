@@ -5,6 +5,7 @@ import { useState, type ReactNode } from 'react'
 import { ThemeProvider } from '@/components/theme/theme-provider'
 import { Toaster } from '@/components/ui/toaster'
 import { Toaster as SonnerToaster } from '@/components/ui/sonner'
+import { RealtimeProvider } from '@/providers/realtime-provider'
 
 export function Providers({ children }: { children: ReactNode }) {
   const [client] = useState(
@@ -22,7 +23,9 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <QueryClientProvider client={client}>
       <ThemeProvider>
-        {children}
+        <RealtimeProvider>
+          {children}
+        </RealtimeProvider>
         <Toaster />
         <SonnerToaster richColors closeButton position="bottom-right" />
       </ThemeProvider>

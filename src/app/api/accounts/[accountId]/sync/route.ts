@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server'
+import { waitUntil } from '@vercel/functions'
+import { getServerSession } from 'next-auth'
 import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 
@@ -54,37 +56,44 @@ export async function POST(_req: Request, ctx: { params: Promise<{ accountId: st
   })
 
   // ── Background sync (fire-and-forget) ────────────────────────────────────
-  // eslint-disable-next-line @typescript-eslint/no-floating-promises
-  ;(async () => {
-    try {
-      const { syncGmailAccount } = await import('@/lib/sync/gmail')
-      await syncGmailAccount(accountId)
+  // Fire-and-forget background sync
+  waitUntil(
+    (async () => {
+      try {
+        const { syncGmailAccount, watchGmailAccount } = await import('@/lib/sync/gmail')
+        
+        // Register watch first
+        await watchGmailAccount(accountId)
+        
+        // Do the sync
+        await syncGmailAccount(accountId)
+        
+        await db.syncState.update({
+          where: { accountId },
+          data: {
+            syncStatus:   'success',
+            lastSyncedAt: new Date(),
+            errorMessage: null,
+            retryCount:   0,
+            syncProgress: 100,
+          },
+        })
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unknown error'
+        console.error(`[api/sync] Background sync failed for ${accountId}:`, err)
 
-      await db.syncState.update({
-        where: { accountId },
-        data: {
-          syncStatus:   'success',
-          lastSyncedAt: new Date(),
-          errorMessage: null,
-          retryCount:   0,
-          syncProgress: 100,
-        },
-      })
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown sync error'
-      console.error(`[sync] Account ${accountId} failed:`, err)
-
-      await db.syncState.update({
-        where: { accountId },
-        data: {
-          syncStatus:   'error',
-          errorMessage: msg.slice(0, 500),
-          retryCount:   { increment: 1 },
-          syncProgress: 0,
-        },
-      }).catch(() => { /* non-fatal — don't shadow original error */ })
-    }
-  })()
+        await db.syncState.update({
+          where: { accountId },
+          data: {
+            syncStatus:   'error',
+            errorMessage: msg.slice(0, 500),
+            retryCount:   { increment: 1 },
+            syncProgress: 0,
+          },
+        }).catch(() => { /* non-fatal — don't shadow original error */ })
+      }
+    })()
+  )
 
   return NextResponse.json({ ok: true, status: 'syncing' })
 }

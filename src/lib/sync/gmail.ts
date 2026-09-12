@@ -447,3 +447,40 @@ export async function syncGmailAccount(accountId: string): Promise<void> {
 
   console.info(`[gmail] ✓ Synced ${syncedCount} new messages for account ${accountId}`)
 }
+
+/**
+ * watchGmailAccount — Registers this account to receive Pub/Sub push notifications.
+ * A watch expires after 7 days, so this must be called periodically (e.g., daily).
+ */
+export async function watchGmailAccount(accountId: string): Promise<void> {
+  const account = await db.accountConnection.findUnique({
+    where: { id: accountId },
+  })
+
+  if (!account || (!account.accessToken && !account.refreshToken)) {
+    console.warn(`[gmail] Account ${accountId} missing or lacks OAuth tokens. Cannot watch.`)
+    return
+  }
+
+  const topicName = process.env.GCP_PUBSUB_TOPIC
+  if (!topicName) {
+    console.warn('[gmail] GCP_PUBSUB_TOPIC is not set, skipping watch registration.')
+    return
+  }
+
+  const auth = buildOAuth2Client(account, accountId)
+  const gmail = google.gmail({ version: 'v1', auth })
+
+  try {
+    const res = await gmail.users.watch({
+      userId: 'me',
+      requestBody: {
+        topicName,
+        labelIds: ['INBOX'],
+      },
+    })
+    console.info(`[gmail] ✓ Watch registered for ${accountId}, historyId: ${res.data.historyId}`)
+  } catch (err: any) {
+    console.error(`[gmail] ✗ Failed to register watch for ${accountId}:`, err?.message || err)
+  }
+}
