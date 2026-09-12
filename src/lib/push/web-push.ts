@@ -11,12 +11,16 @@
 import webpush from 'web-push'
 import { db } from '@/lib/db'
 
-// Configure VAPID once at module load time
-webpush.setVapidDetails(
-  process.env.VAPID_SUBJECT ?? 'mailto:support@mailscape.app',
-  process.env.VAPID_PUBLIC_KEY ?? '',
-  process.env.VAPID_PRIVATE_KEY ?? '',
-)
+// Configure VAPID once at module load time if keys are present
+if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+  webpush.setVapidDetails(
+    process.env.VAPID_SUBJECT ?? 'mailto:support@mailscape.app',
+    process.env.VAPID_PUBLIC_KEY,
+    process.env.VAPID_PRIVATE_KEY,
+  )
+} else {
+  console.warn('[push] VAPID keys are missing. Web push notifications will be disabled.')
+}
 
 export interface PushPayload {
   title: string
