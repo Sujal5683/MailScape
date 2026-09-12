@@ -2,9 +2,9 @@ generator client {
   provider = "prisma-client-js"
 }
 
-// generator client_py {
-//   provider = "prisma-client-py"
-// }
+generator client_py {
+  provider = "prisma-client-py"
+}
 
 datasource db {
   provider  = "postgresql"
